@@ -193,22 +193,26 @@ python scripts/evaluate.py \
 
 If you find this work helpful, please cite our paper:
 ```bibtex
-@article{search-o1,
-    title={Search-o1: Agentic Search-Enhanced Large Reasoning Models},
-    author={Xiaoxi Li and
-            Guanting Dong and
-            Jiajie Jin and
-            Yuyao Zhang and
-            Yujia Zhou and
-            Yutao Zhu and
-            Peitian Zhang and
-            Zhicheng Dou},
-    journal={CoRR},
-    volume={abs/2501.05366},
-    year={2025},
-    url={https://arxiv.org/abs/2501.05366},
-    eprinttype={arXiv},
-    eprint={2501.05366}
+@article{Search-o1,
+  author       = {Xiaoxi Li and
+                  Guanting Dong and
+                  Jiajie Jin and
+                  Yuyao Zhang and
+                  Yujia Zhou and
+                  Yutao Zhu and
+                  Peitian Zhang and
+                  Zhicheng Dou},
+  title        = {Search-o1: Agentic Search-Enhanced Large Reasoning Models},
+  journal      = {CoRR},
+  volume       = {abs/2501.05366},
+  year         = {2025},
+  url          = {https://doi.org/10.48550/arXiv.2501.05366},
+  doi          = {10.48550/ARXIV.2501.05366},
+  eprinttype    = {arXiv},
+  eprint       = {2501.05366},
+  timestamp    = {Wed, 19 Feb 2025 21:19:08 +0100},
+  biburl       = {https://dblp.org/rec/journals/corr/abs-2501-05366.bib},
+  bibsource    = {dblp computer science bibliography, https://dblp.org}
 }
 ```
 
