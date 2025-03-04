@@ -150,7 +150,7 @@ def extract_text_from_url(url, use_jina=False, jina_api_key=None, snippet: Optio
     except Exception as e:
         return f"Unexpected error: {str(e)}"
 
-def fetch_page_content(urls, max_workers=4, use_jina=False, snippets: Optional[dict] = None):
+def fetch_page_content(urls, max_workers=32, use_jina=False, jina_api_key=None, snippets: Optional[dict] = None):
     """
     Concurrently fetch content from multiple URLs.
 
@@ -167,7 +167,7 @@ def fetch_page_content(urls, max_workers=4, use_jina=False, snippets: Optional[d
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Use tqdm to display a progress bar
         futures = {
-            executor.submit(extract_text_from_url, url, use_jina, snippets.get(url) if snippets else None): url
+            executor.submit(extract_text_from_url, url, use_jina, jina_api_key, snippets.get(url) if snippets else None): url
             for url in urls
         }
         for future in tqdm(concurrent.futures.as_completed(futures), desc="Fetching URLs", total=len(urls)):
