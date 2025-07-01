@@ -6,6 +6,8 @@ import re
 import os, time
 import numpy as np
 from tqdm import tqdm
+from openai import OpenAI
+from generation_utils import run_generate_with_backoff
 from vllm import LLM, SamplingParams
 from transformers import AutoTokenizer
 from evaluate import run_evaluation
@@ -19,7 +21,6 @@ import argparse
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run direct generation for various datasets and models.")
-    
     parser.add_argument(
         '--dataset_name', 
         type=str, 
@@ -27,57 +28,69 @@ def parse_args():
         choices=['gpqa', 'math500', 'aime', 'amc', 'livecode', 'nq', 'triviaqa', 'hotpotqa', '2wiki', 'musique', 'bamboogle', 'medmcqa', 'pubhealth'],
         help="Name of the dataset to use."
     )
-    
     parser.add_argument(
         '--split', 
         type=str, 
         required=True, 
-        choices=['test', 'diamond', 'main', 'extended'],
+        choices=['test', 'diamond', 'main', 'extended', 'test_first500', 'dev_first500', 'test_1to4', 'test_1to6'],
         help="Dataset split to use."
     )
-    
     parser.add_argument(
         '--subset_num', 
         type=int, 
         default=-1, 
         help="Number of examples to process. Defaults to all if not specified."
     )
-    
     parser.add_argument(
         '--model_path', 
         type=str, 
         required=True,
         help="Path to the pre-trained model."
     )
-    
+    # API-based inference backend instead of create an vllm model inside the script
+    parser.add_argument(
+        '--use_openai_inference',
+        action='store_true' 
+    )
+    parser.add_argument(
+        '--openai_server_base', 
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        '--openai_organization', 
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        '--openai_api_key', 
+        type=str,
+        default=None,
+    )
     parser.add_argument(
         '--temperature', 
         type=float, 
         default=0.7, 
         help="Sampling temperature."
     )
-    
     parser.add_argument(
         '--top_p', 
         type=float, 
         default=0.8, 
         help="Top-p sampling parameter."
     )
-    
     parser.add_argument(
         '--top_k', 
         type=int, 
         default=20, 
         help="Top-k sampling parameter."
     )
-    
     parser.add_argument(
         '--repetition_penalty', 
         type=float, 
         default=None, 
         help="Repetition penalty. If not set, defaults based on the model."
     )
-    
     parser.add_argument(
         '--max_tokens', 
         type=int, 
@@ -116,7 +129,7 @@ def main():
     elif dataset_name == 'livecode':
         data_path = f'./data/LiveCodeBench/{split}.json'
     elif dataset_name in ['nq', 'triviaqa', 'hotpotqa', 'musique', 'bamboogle', '2wiki', 'medmcqa', 'pubhealth']:
-        data_path = f'./data/QA_Datasets/{dataset_name}.json'
+        data_path = f'./data/QA_Datasets/{dataset_name}_{split}.json'
     else:
         raise ValueError(f"Unsupported dataset_name: {dataset_name}")
     
@@ -149,11 +162,23 @@ def main():
         output_dir = f'./outputs/runs.baselines/{dataset_name}.{model_short_name}.direct'
     os.makedirs(output_dir, exist_ok=True)
     
-    llm = LLM(
-        model=model_path,
-        tensor_parallel_size=torch.cuda.device_count(),
-        gpu_memory_utilization=0.95,
-    )
+    if args.use_openai_inference:
+        if args.openai_server_base:
+            # use local emulators such as vllm
+            llm = OpenAI(base_url=args.openai_server_base, api_key="EMPTY")
+        else:
+            # use openai
+            assert args.openai_api_key is not None
+            if args.openai_organization:
+                llm = OpenAI(api_key=args.openai_api_key, organization=args.openai_organization)
+            else:
+                llm = OpenAI(api_key=args.openai_api_key)
+    else:
+        llm = LLM(
+            model=model_path,
+            tensor_parallel_size=torch.cuda.device_count(),
+            gpu_memory_utilization=0.95,
+        )
     
     # Load data
     with open(data_path, mode='r', encoding='utf-8') as json_file:
@@ -211,16 +236,35 @@ def main():
     
     t_start = time.time()
     # Generate model outputs
-    output_list = llm.generate(
-        input_list, 
-        sampling_params=SamplingParams(
-            max_tokens=max_tokens, 
-            temperature=temperature, 
-            top_p=top_p, 
-            top_k=top_k, 
-            repetition_penalty=repetition_penalty,
+    if args.use_openai_inference:
+        output_list = []
+        for input_prompt_entry in tqdm(input_list):
+            response = run_generate_with_backoff(
+                llm,
+                model=model_path,
+                prompt=input_prompt_entry,
+                max_tokens=max_tokens, 
+                temperature=temperature, 
+                top_p=top_p, 
+                # top_k=top_k, 
+                # repetition_penalty=repetition_penalty,
+                extra_body={
+                    'top_k': top_k,
+                    'repetition_penalty': repetition_penalty
+                },
+            )
+            output_list.append(response)
+    else:
+        output_list = llm.generate(
+            input_list, 
+            sampling_params=SamplingParams(
+                max_tokens=max_tokens, 
+                temperature=temperature, 
+                top_p=top_p, 
+                top_k=top_k, 
+                repetition_penalty=repetition_penalty,
+            )
         )
-    )
     total_time = time.time() - t_start
     
     # Run evaluation

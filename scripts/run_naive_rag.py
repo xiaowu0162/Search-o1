@@ -3,6 +3,8 @@ import os
 import json
 import time
 from tqdm import tqdm
+from openai import OpenAI
+from generation_utils import run_generate_with_backoff
 from typing import List, Dict, Optional, Tuple
 import argparse
 
@@ -31,7 +33,7 @@ from prompts import (
 def parse_args():
     parser = argparse.ArgumentParser(description="Run Naive RAG for various datasets and models.")
 
-    # Dataset and split configuration
+    # Dataset and split configuration    
     parser.add_argument(
         '--dataset_name',
         type=str,
@@ -39,7 +41,6 @@ def parse_args():
         choices=['gpqa', 'math500', 'aime', 'amc', 'livecode', 'nq', 'triviaqa', 'hotpotqa', '2wiki', 'musique', 'bamboogle', 'medmcqa', 'pubhealth'],
         help="Name of the dataset to use."
     )
-
     parser.add_argument(
         '--split',
         type=str,
@@ -47,7 +48,6 @@ def parse_args():
         choices=['test', 'diamond', 'main', 'extended'],
         help="Dataset split to use."
     )
-
     parser.add_argument(
         '--subset_num',
         type=int,
@@ -55,14 +55,13 @@ def parse_args():
         help="Number of examples to process. Defaults to all if not specified."
     )
 
-    # Search and document retrieval configuration
+    # Search and document retrieval configuration    
     parser.add_argument(
         '--top_k',
         type=int,
         default=10,
         help="Number of top search results to retrieve."
     )
-
     parser.add_argument(
         '--max_doc_len',
         type=int,
@@ -70,21 +69,19 @@ def parse_args():
         help="Maximum length of each searched document."
     )
 
-    # Model configuration
+    # Model configuration    
     parser.add_argument(
         '--model_path',
         type=str,
         required=True,
         help="Path to the pre-trained model."
     )
-
     parser.add_argument(
         '--use_jina',
         type=bool,
         default=True,
         help="Whether to use Jina API for document fetching."
     )
-
     parser.add_argument(
         '--jina_api_key',
         type=str,
@@ -92,35 +89,52 @@ def parse_args():
         help="Your Jina API Key to Fetch URL Content."
     )
 
-    # Sampling parameters
+    # API-based inference backend instead of create an vllm model inside the script
+    parser.add_argument(
+        '--use_openai_inference',
+        action='store_true' 
+    )
+    parser.add_argument(
+        '--openai_server_base', 
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        '--openai_organization', 
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        '--openai_api_key', 
+        type=str,
+        default=None,
+    )
+
+    # Sampling parameters    
     parser.add_argument(
         '--temperature',
         type=float,
         default=0.7,
         help="Sampling temperature."
     )
-
     parser.add_argument(
         '--top_p',
         type=float,
         default=0.8,
         help="Top-p sampling parameter."
     )
-
     parser.add_argument(
         '--top_k_sampling',
         type=int,
         default=20,
         help="Top-k sampling parameter."
     )
-
     parser.add_argument(
         '--repetition_penalty',
         type=float,
         default=None,
         help="Repetition penalty. If not set, defaults based on the model."
     )
-
     parser.add_argument(
         '--max_tokens',
         type=int,
@@ -128,14 +142,13 @@ def parse_args():
         help="Maximum number of tokens to generate. If not set, defaults based on the model and dataset."
     )
 
-    # Bing API Configuration
+    # Bing API Configuration    
     parser.add_argument(
         '--bing_subscription_key',
         type=str,
         required=True,
         help="Bing Search API subscription key."
     )
-
     parser.add_argument(
         '--bing_endpoint',
         type=str,
@@ -362,11 +375,23 @@ def main():
 
     # ---------------------- Generation ----------------------
     # Initialize the LLM
-    llm = LLM(
-        model=model_path,
-        tensor_parallel_size=torch.cuda.device_count(),
-        gpu_memory_utilization=0.95,
-    )
+    if args.use_openai_inference:
+        if args.openai_server_base:
+            # use local emulators such as vllm
+            llm = OpenAI(base_url=args.openai_server_base, api_key="EMPTY")
+        else:
+            # use openai
+            assert args.openai_api_key is not None
+            if args.openai_organization:
+                llm = OpenAI(api_key=args.openai_api_key, organization=args.openai_organization)
+            else:
+                llm = OpenAI(api_key=args.openai_api_key)
+    else:
+        llm = LLM(
+            model=model_path,
+            tensor_parallel_size=torch.cuda.device_count(),
+            gpu_memory_utilization=0.95,
+        )
 
     print("Generating answers with LLM...")
 
@@ -379,16 +404,35 @@ def main():
 
     start_time = time.time()
     # Generate model outputs
-    output_list = llm.generate(
-        input_prompts, 
-        sampling_params=SamplingParams(
-            max_tokens=max_tokens, 
-            temperature=temperature, 
-            top_p=top_p, 
-            top_k=top_k_sampling, 
-            repetition_penalty=repetition_penalty,
+    if args.use_openai_inference:
+        output_list = []
+        for input_prompt in tqdm(input_prompts):
+            response = run_generate_with_backoff(
+                llm,
+                model=model_path,
+                prompt=input_prompt,
+                max_tokens=max_tokens, 
+                temperature=temperature, 
+                top_p=top_p, 
+                # top_k=top_k_sampling, 
+                # repetition_penalty=repetition_penalty,
+                extra_body={
+                    'top_k': top_k_sampling,
+                    'repetition_penalty': repetition_penalty
+                },
+            )
+            output_list.append(response)
+    else:
+        output_list = llm.generate(
+            input_prompts, 
+            sampling_params=SamplingParams(
+                max_tokens=max_tokens, 
+                temperature=temperature, 
+                top_p=top_p, 
+                top_k=top_k_sampling, 
+                repetition_penalty=repetition_penalty,
+            )
         )
-    )
 
     total_time = time.time() - start_time
 
