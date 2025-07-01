@@ -4,10 +4,6 @@ model_name="Qwen/QwQ-32B"
 server_base="http://localhost:8001/v1"
 subset=$1
 
-
-##############################################################################
-# Baseline 1 Direct Generation 
-##############################################################################
 # dataset sizes
 # amc - 40
 # aime - 30
@@ -15,6 +11,11 @@ subset=$1
 # livecode_1to4 - 112
 # bamboogle - 125
 # musique/nq/triviaqa/hotpotqa/2wiki - 500
+
+
+##############################################################################
+# Baseline 1 Direct Generation 
+##############################################################################
 
 if [ $subset == "0" ]; then
     python scripts/run_direct_gen.py --dataset_name amc --split test --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} 
@@ -42,3 +43,14 @@ if [ $subset == "5" ]; then
         python scripts/run_direct_gen.py --dataset_name $ds --split dev_first500 --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base}
     done
 fi 
+
+
+##############################################################################
+# Baseline 2 Vanilla RAG (retrieve once with the original question)
+##############################################################################
+if [ $subset == "xxx" ]; then
+    python scripts/run_naive_rag.py --dataset_name gpqa --split diamond \
+        --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} \
+        --serper_subscription_key_file 'serper_api_key.txt' \
+        --use_jina True --jina_api_key 'jina_api_key.txt'     
+fi

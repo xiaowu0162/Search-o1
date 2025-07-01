@@ -137,9 +137,15 @@ def run_evaluation(filtered_data, input_list, output_list, dataset_name, output_
                     item['Output'] = result.outputs[0].text
                 except:
                     try:
-                        item['Output'] = result.choices[0].text
+                        item['Output'] = result.text
                     except:
-                        item['Output'] = result.choices[0].message.content
+                        try:
+                            item['Output'] = result[0].text
+                        except:
+                            try:
+                                item['Output'] = result.choices[0].text
+                            except:
+                                item['Output'] = result.choices[0].message.content
             difficulty = item.get("difficulty", "Unknown")
             difficulties.append(difficulty)
             # Track metrics per domain
@@ -240,7 +246,13 @@ def run_evaluation(filtered_data, input_list, output_list, dataset_name, output_
                     try:
                         item['Output'] = result.text
                     except:
-                        item['Output'] = result.choices[0].text
+                        try:
+                            item['Output'] = result[0].text
+                        except:
+                            try:
+                                item['Output'] = result.choices[0].text
+                            except:
+                                item['Output'] = result.choices[0].message.content
             if dataset_name in ['gpqa', 'medmcqa']:
                 labeled_answer = item["Correct Choice"]
                 # labeled_choice_answer = item["Correct Answer"]

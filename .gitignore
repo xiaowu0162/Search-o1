@@ -1,8 +1,10 @@
 # custom ignores 
 data/
+cache/
 outputs/
 *.pyc
 *pyc
+*api_key*
 
 
 # Byte-compiled / optimized / DLL files

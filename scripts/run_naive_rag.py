@@ -5,12 +5,13 @@ import time
 from tqdm import tqdm
 from openai import OpenAI
 from generation_utils import run_generate_with_backoff, OPENAI_REQUEST_TIMEOUT
-from typing import List, Dict, Optional, Tuple
 import argparse
 
-from bing_search import (
-    bing_web_search,
-    extract_relevant_info,
+from web_search import (
+    # bing_web_search,
+    # extract_relevant_info, 
+    google_serper_search, 
+    extract_relevant_info_serper,
     fetch_page_content,
     extract_snippet_with_context,
 )
@@ -19,8 +20,6 @@ from transformers import AutoTokenizer
 from vllm import LLM, SamplingParams
 
 import re
-import string
-from nltk.tokenize import sent_tokenize
 import torch
 from prompts import (
     get_task_instruction_openqa, 
@@ -45,7 +44,7 @@ def parse_args():
         '--split',
         type=str,
         required=True,
-        choices=['test', 'diamond', 'main', 'extended'],
+        choices=['test', 'diamond', 'main', 'extended', 'test_first500', 'dev_first500', 'test_1to4', 'test_1to6'],
         help="Dataset split to use."
     )
     parser.add_argument(
@@ -138,22 +137,34 @@ def parse_args():
     parser.add_argument(
         '--max_tokens',
         type=int,
-        default=32768,
+        default=None,
         help="Maximum number of tokens to generate. If not set, defaults based on the model and dataset."
+    )
+    parser.add_argument(
+        '--max_context_tokens',
+        type=int,
+        default=None,
+        help="Maximum number of tokens in the retrieved contexts."
     )
 
     # Bing API Configuration    
+    # parser.add_argument(
+    #     '--bing_subscription_key',
+    #     type=str,
+    #     required=True,
+    #     help="Bing Search API subscription key."
+    # )
+    # parser.add_argument(
+    #     '--bing_endpoint',
+    #     type=str,
+    #     default="https://api.bing.microsoft.com/v7.0/search",
+    #     help="Bing Search API endpoint."
+    # )
     parser.add_argument(
-        '--bing_subscription_key',
+        '--serper_subscription_key_file',
         type=str,
         required=True,
-        help="Bing Search API subscription key."
-    )
-    parser.add_argument(
-        '--bing_endpoint',
-        type=str,
-        default="https://api.bing.microsoft.com/v7.0/search",
-        help="Bing Search API endpoint."
+        help="Google Search API subscription key via Serper."
     )
 
     return parser.parse_args()
@@ -173,17 +184,19 @@ def main():
     top_k_sampling = args.top_k_sampling
     repetition_penalty = args.repetition_penalty
     max_tokens = args.max_tokens
-    bing_subscription_key = args.bing_subscription_key
-    bing_endpoint = args.bing_endpoint
+    max_context_tokens = args.max_context_tokens
+    # bing_subscription_key = args.bing_subscription_key
+    # bing_endpoint = args.bing_endpoint
     use_jina = args.use_jina
-    jina_api_key = args.jina_api_key
+    jina_api_key_file = args.jina_api_key
 
     # Set default repetition_penalty if not provided
     if repetition_penalty is None:
         repetition_penalty = 1.05 if 'qwq' in model_path.lower() else 1.0
     
-    if args.jina_api_key == 'None':
-        jina_api_key = None
+    # if args.jina_api_key == 'None':
+    #     jina_api_key = None
+    assert os.path.exists(jina_api_key_file)
 
     # Paths to datasets
     if dataset_name == 'livecode':
@@ -191,7 +204,7 @@ def main():
     elif dataset_name in ['math500', 'gpqa', 'aime', 'amc']:
         data_path = f'./data/{dataset_name.upper()}/{split}.json'
     else:
-        data_path = f'./data/QA_Datasets/{dataset_name}.json'
+        data_path = f'./data/QA_Datasets/{dataset_name}_{split}.json'
 
     # ---------------------- Caching Mechanism ----------------------
     # Define cache directories and file paths
@@ -239,6 +252,22 @@ def main():
         output_dir = f'./outputs/runs.baselines/{dataset_name}.{model_short_name}.naive_rag'
     os.makedirs(output_dir, exist_ok=True)
 
+    # Set default max_tokens if not provided
+    if max_tokens is None:
+        if 'qwq' in model_path.lower():
+            max_tokens = 20480
+        else:
+            max_tokens = 10240
+    if max_context_tokens is None:
+        if 'qwq' in model_path.lower():
+            max_context_tokens = 19000
+        else:
+            raise NotImplementedError
+    if 'qwq' in model_path.lower():
+        assert max_tokens + max_context_tokens < 40000
+    else:
+        raise NotImplementedError('Implement context length check here')
+    
     # ---------------------- Data Loading ----------------------
     with open(data_path, 'r', encoding='utf-8') as json_file:
         data = json.load(json_file)
@@ -246,7 +275,7 @@ def main():
             data = data[:subset_num]
 
     # ---------------------- Search and Document Retrieval ----------------------
-    print("Performing Bing Web Searches for all questions...")
+    print("Performing Google Web Searches for all questions...")
 
     # Initialize a list to hold relevant information for each question
     all_relevant_info = []
@@ -262,12 +291,15 @@ def main():
                 search_question = question[:500]
             else:
                 search_question = question
-            results = bing_web_search(search_question, bing_subscription_key, bing_endpoint, market='en-US', language='en')
+            # results = bing_web_search(search_question, bing_subscription_key, bing_endpoint, market='en-US', language='en')
+            results = google_serper_search(search_question, gl='us', hl='en', 
+                                           serper_api_key=open(args.serper_subscription_key_file).readline().strip())
             search_cache[question] = results
             # print(f"Executed and cached search for question: {question}")
 
         # Extract relevant information from search results
-        relevant_info = extract_relevant_info(results)[:top_k]
+        # relevant_info = extract_relevant_info(results)[:top_k]
+        relevant_info = extract_relevant_info_serper(results)[:top_k]
         all_relevant_info.append(relevant_info)
 
     # Save search cache after retrieval
@@ -292,7 +324,8 @@ def main():
     fetched_contents = fetch_page_content(
         urls_to_fetch,
         use_jina=use_jina,
-        jina_api_key=jina_api_key,
+        jina_api_key_file=jina_api_key_file
+        # jina_api_key=jina_api_key,
         # snippets=url_snippets_map
     )
 
@@ -331,6 +364,9 @@ def main():
             formatted_documents += f"**URL:** {url}\n"
             formatted_documents += f"**Snippet:** {clean_snippet}\n"
             formatted_documents += f"**Content:** {context}\n\n"
+
+        # truncate the documents 
+        formatted_documents = tokenizer.decode(tokenizer.encode(formatted_documents, add_special_tokens=False)[:max_context_tokens])
 
         # Construct the instruction with documents and question
         instruction = get_naive_rag_instruction(question, formatted_documents)
@@ -395,18 +431,11 @@ def main():
 
     print("Generating answers with LLM...")
 
-    # Set default max_tokens if not provided
-    if max_tokens is None:
-        if 'qwq' in model_path.lower():
-            max_tokens = 20480
-        else:
-            max_tokens = 10240
-
     start_time = time.time()
     # Generate model outputs
     if args.use_openai_inference:
         # batch inference with local server
-        bsz = 20   # len(input_list)
+        bsz = len(input_prompts) # 20 
         pbar = tqdm(total=len(input_prompts))
         output_list = []
         for i_b in range(0, len(input_prompts), bsz):

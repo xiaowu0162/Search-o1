@@ -1,10 +1,6 @@
-import csv
 import json
-import random
 import torch
-import re
 import os, time
-import numpy as np
 from tqdm import tqdm
 from openai import OpenAI
 from generation_utils import run_generate_with_backoff, OPENAI_REQUEST_TIMEOUT
@@ -18,6 +14,7 @@ from prompts import (
     get_task_instruction_code, 
 )
 import argparse
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run direct generation for various datasets and models.")
@@ -99,6 +96,7 @@ def parse_args():
     )
     
     return parser.parse_args()
+
 
 def main():
     args = parse_args()
@@ -282,6 +280,7 @@ def main():
         total_time, 
         split,
     )
+
 
 if __name__ == "__main__":
     main()

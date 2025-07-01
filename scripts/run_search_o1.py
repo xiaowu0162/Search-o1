@@ -15,7 +15,7 @@ import argparse
 from transformers import AutoTokenizer
 from vllm import LLM, SamplingParams
 
-from bing_search import (
+from web_search import (
     bing_web_search, 
     extract_relevant_info, 
     fetch_page_content, 
@@ -59,7 +59,7 @@ def parse_args():
         '--split',
         type=str,
         required=True,
-        choices=['test', 'diamond', 'main', 'extended'],
+        choices=['test', 'diamond', 'main', 'extended', 'test_first500', 'dev_first500', 'test_1to4', 'test_1to6'],
         help="Dataset split to use."
     )
     parser.add_argument(
@@ -228,7 +228,7 @@ def main():
     elif dataset_name in ['math500', 'gpqa', 'aime', 'amc']:
         data_path = f'./data/{dataset_name.upper()}/{split}.json'
     else:
-        data_path = f'./data/QA_Datasets/{dataset_name}.json'
+        data_path = f'./data/QA_Datasets/{dataset_name}_{split}.json'
 
     print('-----------------------')
     print(f'Using {dataset_name} {split} set.')
