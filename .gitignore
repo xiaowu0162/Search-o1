@@ -1,5 +1,6 @@
 # custom ignores 
 data/
+outputs/
 *.pyc
 *pyc
 

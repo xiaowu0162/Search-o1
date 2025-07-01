@@ -6,7 +6,7 @@ import re
 import requests
 from tqdm import tqdm
 from openai import OpenAI
-from generation_utils import run_generate_with_backoff
+from generation_utils import run_generate_with_backoff, OPENAI_REQUEST_TIMEOUT
 import numpy as np
 import torch
 from typing import Optional, Tuple, List, Dict
@@ -367,17 +367,20 @@ def main():
         """
         prompts = [s['prompt'] for s in sequences]
         if args.use_openai_inference:
+            # batch inference with local server
+            bsz = 20   # len(input_list)
+            pbar = tqdm(total=len(prompts))
             output_list = []
-            for input_prompt in tqdm(prompts):
-                response = run_generate_with_backoff(
+            for i_b in range(0, len(prompts), bsz):
+                prompt_batch = prompts[i_b:i_b+bsz]
+                batch_outputs = run_generate_with_backoff(
                     llm,
                     model=model_path,
-                    prompt=input_prompt,
-                    max_tokens=max_tokens, 
-                    temperature=temperature, 
-                    top_p=top_p, 
-                    # top_k=top_k_sampling, 
-                    # repetition_penalty=repetition_penalty,
+                    prompt=prompt_batch,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    top_p=top_p,
+                    timeout=OPENAI_REQUEST_TIMEOUT,
                     stop=[END_SEARCH_QUERY, END_URL, tokenizer.eos_token],
                     include_stop_str_in_output=True,
                     extra_body={
@@ -385,7 +388,9 @@ def main():
                         'repetition_penalty': repetition_penalty
                     },
                 )
-                output_list.append(response)
+                output_list.extend(batch_outputs.choices)
+                pbar.update(len(prompt_batch))
+            pbar.close()
         else:
             sampling_params = SamplingParams(
                 max_tokens=max_tokens,

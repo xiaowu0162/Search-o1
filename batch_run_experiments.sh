@@ -8,27 +8,37 @@ subset=$1
 ##############################################################################
 # Baseline 1 Direct Generation 
 ##############################################################################
+# dataset sizes
+# amc - 40
+# aime - 30
+# math500 - 500
+# livecode_1to4 - 112
+# bamboogle - 125
+# musique/nq/triviaqa/hotpotqa/2wiki - 500
 
+if [ $subset == "0" ]; then
+    python scripts/run_direct_gen.py --dataset_name amc --split test --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} 
+fi
 if [ $subset == "1" ]; then
-    for ds in amc aime math500; do 
-        python scripts/run_direct_gen.py --dataset_name $ds --split test --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base}
-    done
-    python scripts/run_direct_gen.py --dataset_name bamboogle --split test --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base}
+    python scripts/run_direct_gen.py --dataset_name aime --split test --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base}
+fi
+if [ $subset == "2" ]; then
+    python scripts/run_direct_gen.py --dataset_name math500 --split test --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base}
+fi 
+if [ $subset == "3" ]; then
+    python scripts/run_direct_gen.py --dataset_name livecode --split test_1to4 --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base}
+fi 
+if [ $subset == "4" ]; then
+    python scripts/run_direct_gen.py --dataset_name gpqa --split diamond --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} 
 fi
 
-if [ $subset == "2" ]; then
-    python scripts/run_direct_gen.py --dataset_name livecode --split test_1to4 --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base}
-    python scripts/run_direct_gen.py --dataset_name musique --split dev_first500 --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base}
-fi 
-
-if [ $subset == "3" ]; then
+# QA tasks (relateively fast to run)
+if [ $subset == "5" ]; then
+    python scripts/run_direct_gen.py --dataset_name bamboogle --split test --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base}
     for ds in nq triviaqa; do
         python scripts/run_direct_gen.py --dataset_name $ds --split test_first500 --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base}
     done
-fi 
-
-if [ $subset == "4" ]; then
-    for ds in hotpotqa 2wiki; do
+    for ds in musique hotpotqa 2wiki; do
         python scripts/run_direct_gen.py --dataset_name $ds --split dev_first500 --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base}
     done
 fi 

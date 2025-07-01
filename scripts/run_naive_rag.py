@@ -4,7 +4,7 @@ import json
 import time
 from tqdm import tqdm
 from openai import OpenAI
-from generation_utils import run_generate_with_backoff
+from generation_utils import run_generate_with_backoff, OPENAI_REQUEST_TIMEOUT
 from typing import List, Dict, Optional, Tuple
 import argparse
 
@@ -405,23 +405,28 @@ def main():
     start_time = time.time()
     # Generate model outputs
     if args.use_openai_inference:
+        # batch inference with local server
+        bsz = 20   # len(input_list)
+        pbar = tqdm(total=len(input_prompts))
         output_list = []
-        for input_prompt in tqdm(input_prompts):
-            response = run_generate_with_backoff(
+        for i_b in range(0, len(input_prompts), bsz):
+            prompt_batch = input_prompts[i_b:i_b+bsz]
+            batch_outputs = run_generate_with_backoff(
                 llm,
                 model=model_path,
-                prompt=input_prompt,
-                max_tokens=max_tokens, 
-                temperature=temperature, 
-                top_p=top_p, 
-                # top_k=top_k_sampling, 
-                # repetition_penalty=repetition_penalty,
+                prompt=prompt_batch,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                timeout=OPENAI_REQUEST_TIMEOUT,
                 extra_body={
                     'top_k': top_k_sampling,
                     'repetition_penalty': repetition_penalty
                 },
             )
-            output_list.append(response)
+            output_list.extend(batch_outputs.choices)
+            pbar.update(len(prompt_batch))
+        pbar.close()
     else:
         output_list = llm.generate(
             input_prompts, 

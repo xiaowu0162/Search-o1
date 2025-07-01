@@ -7,7 +7,7 @@ import os, time
 import numpy as np
 from tqdm import tqdm
 from openai import OpenAI
-from generation_utils import run_generate_with_backoff
+from generation_utils import run_generate_with_backoff, OPENAI_REQUEST_TIMEOUT
 from vllm import LLM, SamplingParams
 from transformers import AutoTokenizer
 from evaluate import run_evaluation
@@ -165,7 +165,7 @@ def main():
     if args.use_openai_inference:
         if args.openai_server_base:
             # use local emulators such as vllm
-            llm = OpenAI(base_url=args.openai_server_base, api_key="EMPTY")
+            llm = OpenAI(base_url=args.openai_server_base, api_key="EMPTY", timeout=OPENAI_REQUEST_TIMEOUT)
         else:
             # use openai
             assert args.openai_api_key is not None
@@ -237,23 +237,28 @@ def main():
     t_start = time.time()
     # Generate model outputs
     if args.use_openai_inference:
+        # batch inference with local server
+        bsz = len(input_list)   # 40
+        pbar = tqdm(total=len(input_list))
         output_list = []
-        for input_prompt_entry in tqdm(input_list):
-            response = run_generate_with_backoff(
+        for i_b in range(0, len(input_list), bsz):
+            prompt_batch = input_list[i_b:i_b+bsz]
+            batch_outputs = run_generate_with_backoff(
                 llm,
                 model=model_path,
-                prompt=input_prompt_entry,
-                max_tokens=max_tokens, 
-                temperature=temperature, 
-                top_p=top_p, 
-                # top_k=top_k, 
-                # repetition_penalty=repetition_penalty,
+                prompt=prompt_batch,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                timeout=OPENAI_REQUEST_TIMEOUT,
                 extra_body={
                     'top_k': top_k,
                     'repetition_penalty': repetition_penalty
-                },
+                }
             )
-            output_list.append(response)
+            output_list.extend(batch_outputs.choices)
+            pbar.update(len(prompt_batch))
+        pbar.close() 
     else:
         output_list = llm.generate(
             input_list, 
