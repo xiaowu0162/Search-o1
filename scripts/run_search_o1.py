@@ -336,7 +336,7 @@ def main():
             # batch inference with local server
             bsz = 20   # len(input_list)
             pbar = tqdm(total=len(prompts))
-            output_list = []
+            output = []
             for i_b in range(0, len(prompts), bsz):
                 prompt_batch = prompts[i_b:i_b+bsz]
                 batch_outputs = run_generate_with_backoff(
@@ -352,7 +352,7 @@ def main():
                         'repetition_penalty': 1.05
                     },
                 )
-                output_list.extend(batch_outputs.choices)
+                output.extend(batch_outputs.choices)
                 pbar.update(len(prompt_batch))
             pbar.close()
         else:
