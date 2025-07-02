@@ -16,8 +16,10 @@ from transformers import AutoTokenizer
 from vllm import LLM, SamplingParams
 
 from web_search import (
-    bing_web_search, 
-    extract_relevant_info, 
+    # bing_web_search, 
+    # extract_relevant_info, 
+    google_serper_search, 
+    extract_relevant_info_serper,
     fetch_page_content, 
     extract_snippet_with_context
 )
@@ -164,24 +166,29 @@ def parse_args():
     parser.add_argument(
         '--max_tokens',
         type=int,
-        default=32768,
+        default=None,
         help="Maximum number of tokens to generate. If not set, defaults based on the model and dataset."
     )
 
     # Bing API Configuration    
+    # parser.add_argument(
+    #     '--bing_subscription_key',
+    #     type=str,
+    #     required=True,
+    #     help="Bing Search API subscription key."
+    # )
+    # parser.add_argument(
+    #     '--bing_endpoint',
+    #     type=str,
+    #     default="https://api.bing.microsoft.com/v7.0/search",
+    #     help="Bing Search API endpoint."
+    # )
     parser.add_argument(
-        '--bing_subscription_key',
+        '--serper_subscription_key_file',
         type=str,
         required=True,
-        help="Bing Search API subscription key."
+        help="Google Search API subscription key via Serper."
     )
-    parser.add_argument(
-        '--bing_endpoint',
-        type=str,
-        default="https://api.bing.microsoft.com/v7.0/search",
-        help="Bing Search API endpoint."
-    )
-
     return parser.parse_args()
 
 def main():
@@ -201,10 +208,10 @@ def main():
     top_k_sampling = args.top_k_sampling
     repetition_penalty = args.repetition_penalty
     max_tokens = args.max_tokens
-    bing_subscription_key = args.bing_subscription_key
-    bing_endpoint = args.bing_endpoint
+    # bing_subscription_key = args.bing_subscription_key
+    # bing_endpoint = args.bing_endpoint
     use_jina = args.use_jina
-    jina_api_key = args.jina_api_key
+    jina_api_key_file = args.jina_api_key
     
     # Adjust parameters based on dataset
     if dataset_name in ['nq', 'triviaqa', 'hotpotqa', 'musique', 'bamboogle', '2wiki', 'medmcqa', 'pubhealth']:
@@ -215,8 +222,9 @@ def main():
         top_k = 10
         max_doc_len = 3000
     
-    if args.jina_api_key == 'None':
-        jina_api_key = None
+    # if args.jina_api_key == 'None':
+    #     jina_api_key = None
+    assert os.path.exists(jina_api_key_file)
 
     # Set default repetition_penalty if not provided
     if repetition_penalty is None:
@@ -359,7 +367,10 @@ def main():
                 )
             )
 
-        raw_outputs = [out.outputs[0].text for out in output]
+        try:
+            raw_outputs = [out.outputs[0].text for out in output]
+        except:
+            raw_outputs = [out.text for out in output]
         extracted_infos = [extract_answer(raw, mode='infogen') for raw in raw_outputs]
 
         for i, (p, r, e) in enumerate(zip(prompts, raw_outputs, extracted_infos)):
@@ -459,10 +470,10 @@ def main():
                     top_p=top_p,
                     timeout=OPENAI_REQUEST_TIMEOUT,
                     stop=[END_SEARCH_QUERY, tokenizer.eos_token],
-                    include_stop_str_in_output=True,
                     extra_body={
                         'top_k': top_k_sampling,
-                        'repetition_penalty': repetition_penalty
+                        'repetition_penalty': repetition_penalty,
+                        'include_stop_str_in_output': True,
                     },
                 )
                 output_list.extend(batch_outputs.choices)
@@ -592,7 +603,10 @@ def main():
 
             # Process each sequence and collect URLs
             for seq, out in zip(sequences_needing_generation, outputs):
-                text = out.outputs[0].text
+                try:
+                    text = out.outputs[0].text
+                except:
+                    text = out.text
                 seq['history'].append(text)
                 # Append generated text to prompt and output
                 seq['prompt'] += text
@@ -610,7 +624,9 @@ def main():
                             print(f"Using cached search results for query: \"{search_query}\"")
                         else:
                             try:
-                                results = bing_web_search(search_query, bing_subscription_key, bing_endpoint, market='en-US', language='en')
+                                # results = bing_web_search(search_query, bing_subscription_key, bing_endpoint, market='en-US', language='en')
+                                results = google_serper_search(search_query, gl='us', hl='en',
+                                                               serper_api_key=open(args.serper_subscription_key_file).readline().strip())
                                 search_cache[search_query] = results
                                 print(f"Executed and cached search for query: \"{search_query}\"")
                             except Exception as e:
@@ -619,7 +635,8 @@ def main():
                                 results = {}
 
                         # Extract relevant information from Bing search results
-                        relevant_info = extract_relevant_info(results)[:top_k]
+                        # relevant_info = extract_relevant_info(results)[:top_k]
+                        relevant_info = extract_relevant_info_serper(results)[:top_k]
                         seq['relevant_info'] = relevant_info
 
                         # Extract URLs and snippets
@@ -692,7 +709,8 @@ def main():
                     fetched_contents = fetch_page_content(
                         list(all_urls_to_fetch),
                         use_jina=use_jina,
-                        jina_api_key=jina_api_key,
+                        jina_api_key_file=jina_api_key_file,
+                        # jina_api_key=jina_api_key,
                         # snippets=url_snippets  # Do not pass snippets when updating url_cache directly
                     )
                     print(f"Fetched {len(fetched_contents)} URLs successfully.")

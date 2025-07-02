@@ -14,7 +14,8 @@ import argparse
 
 from transformers import AutoTokenizer
 from vllm import LLM, SamplingParams
-from web_search import bing_web_search, extract_relevant_info, fetch_page_content
+# from web_search import bing_web_search, extract_relevant_info, fetch_page_content
+from web_search import google_serper_search, extract_relevant_info_serper, fetch_page_content
 from evaluate import run_evaluation
 from prompts import (
     get_singleqa_rag_agent_instruction, 
@@ -158,24 +159,29 @@ def parse_args():
     parser.add_argument(
         '--max_tokens',
         type=int,
-        default=32768,
+        default=None,
         help="Maximum number of tokens to generate. If not set, defaults based on the model and dataset."
     )
 
     # Bing API Configuration    
+    # parser.add_argument(
+    #     '--bing_subscription_key',
+    #     type=str,
+    #     required=True,
+    #     help="Bing Search API subscription key."
+    # )
+    # parser.add_argument(
+    #     '--bing_endpoint',
+    #     type=str,
+    #     default="https://api.bing.microsoft.com/v7.0/search",
+    #     help="Bing Search API endpoint."
+    # )
     parser.add_argument(
-        '--bing_subscription_key',
+        '--serper_subscription_key_file',
         type=str,
         required=True,
-        help="Bing Search API subscription key."
+        help="Google Search API subscription key via Serper."
     )
-    parser.add_argument(
-        '--bing_endpoint',
-        type=str,
-        default="https://api.bing.microsoft.com/v7.0/search",
-        help="Bing Search API endpoint."
-    )
-
     return parser.parse_args()
 
 def main():
@@ -195,10 +201,10 @@ def main():
     top_k_sampling = args.top_k_sampling
     repetition_penalty = args.repetition_penalty
     max_tokens = args.max_tokens
-    bing_subscription_key = args.bing_subscription_key
-    bing_endpoint = args.bing_endpoint
+    # bing_subscription_key = args.bing_subscription_key
+    # bing_endpoint = args.bing_endpoint
     use_jina = args.use_jina
-    jina_api_key = args.jina_api_key
+    jina_api_key_file = args.jina_api_key
 
     # Adjust parameters based on dataset
     if dataset_name in ['nq', 'triviaqa', 'hotpotqa', 'musique', 'bamboogle', '2wiki', 'medmcqa', 'pubhealth']:
@@ -211,8 +217,9 @@ def main():
     if repetition_penalty is None:
         repetition_penalty = 1.05 if 'qwq' in model_path.lower() else 1.0
     
-    if args.jina_api_key == 'None':
-        jina_api_key = None
+    # if args.jina_api_key == 'None':
+    #     jina_api_key = None
+    assert jina_api_key_file is not None
 
     # Data paths based on dataset
     if dataset_name == 'livecode':
@@ -286,6 +293,26 @@ def main():
             tensor_parallel_size=torch.cuda.device_count(),
             gpu_memory_utilization=0.95,
         )
+
+    # ---------------------- Set Max Tokens ----------------------
+    if 'qwq' in model_path.lower():
+        if dataset_name in ['aime', 'amc', 'livecode']:
+            max_tokens = 32768
+        else:
+            max_tokens = 20480
+    else:
+        max_tokens = 8192
+
+    # if max_context_tokens is None:
+    #     if 'qwq' in model_path.lower():
+    #         max_context_tokens = 40000 - max_tokens
+    #     else:
+    #         raise NotImplementedError
+    # if 'qwq' in model_path.lower():
+    #     assert max_tokens + max_context_tokens < 40000
+    # else:
+    #     raise NotImplementedError('Implement context length check here')
+
     # ---------------------- Data Loading ----------------------
     with open(data_path, 'r', encoding='utf-8') as json_file:
         filtered_data = json.load(json_file)
@@ -351,15 +378,6 @@ def main():
         'search_count': 0  # Search counter
     } for item, prompt in zip(filtered_data, input_list)]
 
-    # ---------------------- Set Max Tokens ----------------------
-    if 'qwq' in model_path.lower():
-        if dataset_name in ['aime', 'amc', 'livecode']:
-            max_tokens = 32768
-        else:
-            max_tokens = 20480
-    else:
-        max_tokens = 8192
-
     # ---------------------- Generation Function ----------------------
     def run_generation(sequences, max_tokens):
         """
@@ -368,7 +386,7 @@ def main():
         prompts = [s['prompt'] for s in sequences]
         if args.use_openai_inference:
             # batch inference with local server
-            bsz = 20   # len(input_list)
+            bsz = len(input_list)  #   # len(input_list)
             pbar = tqdm(total=len(prompts))
             output_list = []
             for i_b in range(0, len(prompts), bsz):
@@ -382,10 +400,10 @@ def main():
                     top_p=top_p,
                     timeout=OPENAI_REQUEST_TIMEOUT,
                     stop=[END_SEARCH_QUERY, END_URL, tokenizer.eos_token],
-                    include_stop_str_in_output=True,
                     extra_body={
                         'top_k': top_k_sampling,
-                        'repetition_penalty': repetition_penalty
+                        'repetition_penalty': repetition_penalty,
+                        'include_stop_str_in_output': True
                     },
                 )
                 output_list.extend(batch_outputs.choices)
@@ -438,14 +456,16 @@ def main():
                     else:
                         try:
                             # Execute search and cache results
-                            results = bing_web_search(query, bing_subscription_key, bing_endpoint, market='en-US', language='en')
+                            # results = bing_web_search(query, bing_subscription_key, bing_endpoint, market='en-US', language='en')
+                            results = google_serper_search(query, gl='us', hl='en',
+                                                           serper_api_key=open(args.serper_subscription_key_file).readline().strip())
                             search_cache[query] = results
                             print(f"Executed and cached search for query: {query}")
                         except Exception as e:
                             print(f"Error during search query '{query}': {e}")
                             search_cache[query] = {}
                             results = {}
-                    relevant_info = extract_relevant_info(results)[:top_k]
+                    relevant_info = extract_relevant_info_serper(results)[:top_k]
                     search_result_str = json.dumps(relevant_info, ensure_ascii=False, indent=2)
                     # Append search results to the prompt
                     append_text = f"\n{BEGIN_SEARCH_RESULT}\n{search_result_str}\n{END_SEARCH_RESULT}\n"
@@ -496,7 +516,8 @@ def main():
                     if urls_to_fetch_filtered:
                         try:
                             # Batch pass uncached URLs
-                            contents = fetch_page_content(urls_to_fetch_filtered, use_jina=use_jina, jina_api_key=jina_api_key)
+                            # contents = fetch_page_content(urls_to_fetch_filtered, use_jina=use_jina, jina_api_key=jina_api_key)
+                            contents = fetch_page_content(urls_to_fetch_filtered, use_jina=use_jina, jina_api_key_file=jina_api_key_file)
                             for url, content in contents.items():
                                 url_cache[url] = content
                                 print(f"Fetched and cached URL content for URL: {url}")
@@ -545,7 +566,10 @@ def main():
 
             # Process each generated output
             for seq, out in zip(sequences_needing_generation, outputs):
-                text = out.outputs[0].text
+                try:
+                    text = out.outputs[0].text
+                except:
+                    text = out.text
                 seq['history'].append(text)
                 # Append generated text to prompt and output
                 seq['prompt'] += text

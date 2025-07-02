@@ -260,7 +260,7 @@ def main():
             max_tokens = 10240
     if max_context_tokens is None:
         if 'qwq' in model_path.lower():
-            max_context_tokens = 19000
+            max_context_tokens = 18000
         else:
             raise NotImplementedError
     if 'qwq' in model_path.lower():

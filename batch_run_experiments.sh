@@ -54,3 +54,27 @@ if [ $subset == "xxx" ]; then
         --serper_subscription_key_file 'serper_api_key.txt' \
         --use_jina True --jina_api_key 'jina_api_key.txt'     
 fi
+
+
+##############################################################################
+# Baseline 3 RAG Agent (LRM writes query and checks full pages if needed)
+##############################################################################
+
+if [ $subset == "yyy" ]; then
+    python scripts/run_rag_agent.py --dataset_name gpqa --split diamond \
+        --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} \
+        --serper_subscription_key_file 'serper_api_key.txt' \
+        --use_jina True --jina_api_key 'jina_api_key.txt'       # --subset_num 1
+fi
+
+
+##############################################################################
+# Search-o1
+##############################################################################
+
+if [ $subset == "zzz" ]; then
+    python scripts/run_search_o1.py --dataset_name gpqa --split diamond \
+        --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} \
+        --serper_subscription_key_file 'serper_api_key.txt' \
+        --use_jina True --jina_api_key 'jina_api_key.txt'       # --subset_num 1
+fi
