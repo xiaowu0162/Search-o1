@@ -770,7 +770,7 @@ def main():
                     documents=batch_documents,
                     dataset_name=dataset_name,
                     batch_output_records=batch_output_records,  # Pass the collection list
-                    max_tokens=max_tokens_webpage_summary,
+                    max_tokens_webpage_summary=max_tokens_webpage_summary,
                     # max_tokens=max_tokens,
                 )
                 print("Batch generation completed, assigning outputs to sequences...")
