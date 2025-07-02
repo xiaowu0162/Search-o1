@@ -309,6 +309,19 @@ def main():
             gpu_memory_utilization=0.95,
         )
 
+    # for fine-grained context truncation at each round
+    if not max_tokens:
+        if 'qwq' in model_path.lower():
+            max_tokens = 32768
+
+    PROTECTED_REASONING_BUDGET = max_tokens
+    max_tokens_webpage_summary = 10240   # slightly shorter to give space to existing reasoning and webpage
+    MODEL_MAX_LENGTH = None
+    if 'qwq' in model_path.lower():
+        MODEL_MAX_LENGTH = 40960
+    else:
+        raise NotImplementedError('Implement context length check here')
+
     # ---------------------- Data Loading ----------------------
     with open(data_path, 'r', encoding='utf-8') as json_file:
         filtered_data = json.load(json_file)
@@ -321,11 +334,18 @@ def main():
         documents: List[str],
         dataset_name: str,
         batch_output_records: List[Dict],  # New parameter to collect outputs
-        max_tokens: int = 32768,
+        max_tokens_webpage_summary: int,
         coherent: bool = False,
     ) -> List[str]:
+
+        def truncate_webpage(prefix, doc_to_truncate):
+            prefix_len = len(tokenizer.encode(prefix)) + 1000   # taking into account the instructions
+            target_len = MODEL_MAX_LENGTH - max_tokens_webpage_summary - prefix_len
+            doc_truncated = tokenizer.decode(tokenizer.encode(doc_to_truncate, add_special_tokens=False)[:target_len])
+            return doc_truncated
+
         user_prompts = [
-            get_webpage_to_reasonchain_instruction(r, sq, doc)
+            get_webpage_to_reasonchain_instruction(r, sq, truncate_webpage(r, doc))
             for r, sq, doc in zip(prev_reasonings, search_queries, documents)
         ]
 
@@ -343,7 +363,7 @@ def main():
                     llm,
                     model=model_path,
                     prompt=prompt_batch,
-                    max_tokens=max_tokens,
+                    max_tokens=max_tokens_webpage_summary,
                     temperature=0.7,
                     top_p=0.8,
                     timeout=OPENAI_REQUEST_TIMEOUT,
@@ -359,7 +379,7 @@ def main():
             output = llm.generate(
                 prompts,
                 sampling_params=SamplingParams(
-                    max_tokens=max_tokens,
+                    max_tokens=max_tokens_webpage_summary,
                     temperature=0.7,
                     top_p=0.8,
                     top_k=20,
@@ -456,7 +476,7 @@ def main():
         prompts = [s['prompt'] for s in sequences]
         if args.use_openai_inference:
             # batch inference with local server
-            bsz = 20   # len(input_list)
+            bsz = len(input_list)
             pbar = tqdm(total=len(prompts))
             output_list = []
             for i_b in range(0, len(prompts), bsz):
@@ -750,21 +770,39 @@ def main():
                     documents=batch_documents,
                     dataset_name=dataset_name,
                     batch_output_records=batch_output_records,  # Pass the collection list
-                    max_tokens=max_tokens,
+                    max_tokens=max_tokens_webpage_summary,
+                    # max_tokens=max_tokens,
                 )
                 print("Batch generation completed, assigning outputs to sequences...")
 
                 for seq, analysis in zip(batch_sequences, webpage_analyses):
+
+                    # TODO: truncate doc here
+                    def fine_grained_truncation(cur_prefix, context_to_truncate):
+                        pattern1 = re.escape(BEGIN_SEARCH_RESULT) + r".*?" + re.escape(END_SEARCH_RESULT)
+                        cur_reasoning_text = cur_prefix.split('<think>')[-1]
+                        cur_reasoning_text = re.sub(pattern1, " ", cur_reasoning_text, flags=re.DOTALL)
+                        cur_full_prefix_tokens = len(tokenizer.encode(cur_prefix, add_special_tokens=False))
+                        cur_reasoning_tokens = len(tokenizer.encode(cur_reasoning_text, add_special_tokens=False))
+                        cur_context_budget = MODEL_MAX_LENGTH - PROTECTED_REASONING_BUDGET - (cur_full_prefix_tokens - cur_reasoning_tokens) - 500
+                        context_truncated = tokenizer.decode(tokenizer.encode(context_to_truncate, add_special_tokens=False)[:cur_context_budget])
+                        return context_truncated 
+                    
                     if isinstance(analysis, str):
-                        append_text = f"\n\n{BEGIN_SEARCH_RESULT}{analysis}{END_SEARCH_RESULT}\n\n"
+                        # append_text = f"\n\n{BEGIN_SEARCH_RESULT}{analysis}{END_SEARCH_RESULT}\n\n"
+                        truncated_analysis = fine_grained_truncation(seq['prompt'], analysis)
+                        append_text = f"\n\n{BEGIN_SEARCH_RESULT}{truncated_analysis}{END_SEARCH_RESULT}\n\n"
                         seq['prompt'] += append_text
                         seq['output'] += append_text
                         seq['history'].append(append_text)
                     else:
+                        # It seems that this branch is not relevant anymore in search o1
+                        # bacause generate_webpage_to_reason_chain_batch seems to always return list of texts
                         append_text = replace_recent_steps(seq['output'], analysis)
-                        seq['prompt'] += append_text
-                        seq['output'] += append_text
-                        seq['history'].append(append_text)
+                        truncated_append_text = fine_grained_truncation(seq['prompt'], truncated_append_text)
+                        seq['prompt'] += truncated_append_text
+                        seq['output'] += truncated_append_text
+                        seq['history'].append(truncated_append_text)
 
         # Check if all sequences are finished
         unfinished = [seq for seq in active_sequences if not seq['finished']]

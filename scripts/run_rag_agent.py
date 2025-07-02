@@ -303,15 +303,13 @@ def main():
     else:
         max_tokens = 8192
 
-    # if max_context_tokens is None:
-    #     if 'qwq' in model_path.lower():
-    #         max_context_tokens = 40000 - max_tokens
-    #     else:
-    #         raise NotImplementedError
-    # if 'qwq' in model_path.lower():
-    #     assert max_tokens + max_context_tokens < 40000
-    # else:
-    #     raise NotImplementedError('Implement context length check here')
+    # for fine-grained context truncation at each round
+    PROTECTED_REASONING_BUDGET = max_tokens
+    MODEL_MAX_LENGTH = None
+    if 'qwq' in model_path.lower():
+        MODEL_MAX_LENGTH = 40960
+    else:
+        raise NotImplementedError('Implement context length check here')
 
     # ---------------------- Data Loading ----------------------
     with open(data_path, 'r', encoding='utf-8') as json_file:
@@ -468,6 +466,7 @@ def main():
                     relevant_info = extract_relevant_info_serper(results)[:top_k]
                     search_result_str = json.dumps(relevant_info, ensure_ascii=False, indent=2)
                     # Append search results to the prompt
+                    # Seems that relevant_info is short and we don't need to truncate here. 
                     append_text = f"\n{BEGIN_SEARCH_RESULT}\n{search_result_str}\n{END_SEARCH_RESULT}\n"
                     seq['prompt'] += append_text
                     seq['output'] += append_text
@@ -533,11 +532,25 @@ def main():
                     for url, _ in fetched_contents:
                         seq['executed_url_fetches'].add(url)
 
+                    # Truncation logic with more fine-grained max token calculation
+                    def fine_grained_truncation(cur_prefix, context_to_truncate):
+                        pattern1 = re.escape(BEGIN_SEARCH_RESULT) + r".*?" + re.escape(END_SEARCH_RESULT)
+                        pattern2 = re.escape(BEGIN_FULL_PAGE) + r".*?" + re.escape(END_FULL_PAGE)
+                        cur_reasoning_text = cur_prefix.split('<think>')[-1]
+                        cur_reasoning_text = re.sub(pattern1, " ", cur_reasoning_text, flags=re.DOTALL)
+                        cur_reasoning_text = re.sub(pattern2, " ", cur_reasoning_text, flags=re.DOTALL)
+                        cur_full_prefix_tokens = len(tokenizer.encode(cur_prefix, add_special_tokens=False))
+                        cur_reasoning_tokens = len(tokenizer.encode(cur_reasoning_text, add_special_tokens=False))
+                        cur_context_budget = MODEL_MAX_LENGTH - PROTECTED_REASONING_BUDGET - (cur_full_prefix_tokens - cur_reasoning_tokens) - 500
+                        context_truncated = tokenizer.decode(tokenizer.encode(context_to_truncate, add_special_tokens=False)[:cur_context_budget])
+                        return context_truncated 
+
                     # Construct full page content string
                     fetched_pages = dict(fetched_contents)
                     full_page_str = json.dumps(fetched_pages, ensure_ascii=False, indent=2)
                     # Append full page content to the prompt
-                    append_text = f"\n{BEGIN_FULL_PAGE}\n{full_page_str}\n{END_FULL_PAGE}\n"
+                    full_page_str_trunc = fine_grained_truncation(full_page_str)
+                    append_text = f"\n{BEGIN_FULL_PAGE}\n{full_page_str_trunc}\n{END_FULL_PAGE}\n"
                     seq['prompt'] += append_text
                     seq['output'] += append_text
                     # Update history
@@ -556,7 +569,6 @@ def main():
         # Continue to the next iteration if there are pending operations
         if sequences_with_pending_ops:
             continue  # Process operations first
-
         # Handle sequences needing generation
         if sequences_needing_generation:
             turn += 1
