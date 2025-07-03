@@ -94,7 +94,12 @@ def parse_args():
         default=32768, 
         help="Maximum number of tokens to generate. If not set, defaults based on the model and dataset."
     )
-    
+    # For explorations
+    parser.add_argument(
+        '--self_segment_reasoning', 
+        action='store_true', 
+        help="Self-segment the reasoning trajectory."
+    )
     return parser.parse_args()
 
 
@@ -110,6 +115,10 @@ def main():
     top_k = args.top_k
     repetition_penalty = args.repetition_penalty
     max_tokens = args.max_tokens
+
+    # exploration
+    if args.self_segment_reasoning:
+        assert 'qwq' in model_path.lower()
     
     # Set default repetition_penalty if not provided
     if repetition_penalty is None:
@@ -188,19 +197,19 @@ def main():
         question = item['Question']
         if dataset_name in ['nq', 'triviaqa', 'hotpotqa', 'musique', 'bamboogle', '2wiki']:
             if 'qwq' in model_path.lower() or 'deepseek' in model_path.lower() or 'sky-t1' in model_path.lower():
-                user_prompt = get_task_instruction_openqa(question, model_name='qwq')
+                user_prompt = get_task_instruction_openqa(question, model_name='qwq', self_segment_reasoning=args.self_segment_reasoning)
             else:
                 user_prompt = get_task_instruction_openqa(question)
 
         elif dataset_name in ['math500', 'aime', 'amc']:
             if 'qwq' in model_path.lower() or 'deepseek' in model_path.lower() or 'sky-t1' in model_path.lower():
-                user_prompt = get_task_instruction_math(question, model_name='qwq')
+                user_prompt = get_task_instruction_math(question, model_name='qwq', self_segment_reasoning=args.self_segment_reasoning)
             else:
                 user_prompt = get_task_instruction_math(question)
 
         elif dataset_name in ['gpqa']:
             if 'qwq' in model_path.lower() or 'deepseek' in model_path.lower() or 'sky-t1' in model_path.lower():
-                user_prompt = get_task_instruction_multi_choice(question, model_name='qwq')
+                user_prompt = get_task_instruction_multi_choice(question, model_name='qwq', self_segment_reasoning=args.self_segment_reasoning)
             elif 'llama' in model_path.lower():
                 user_prompt = get_task_instruction_multi_choice(question, model_name='llama')
             else:
@@ -209,12 +218,22 @@ def main():
         elif dataset_name == 'livecode':
             question_title = item.get('question_title', '')
             if 'qwq' in model_path.lower() or 'deepseek' in model_path.lower() or 'sky-t1' in model_path.lower():
-                user_prompt = get_task_instruction_code(question, question_title=question_title, model_name='qwq')
+                user_prompt = get_task_instruction_code(question, question_title=question_title, model_name='qwq', self_segment_reasoning=args.self_segment_reasoning)
             else:
                 user_prompt = get_task_instruction_code(question)
         else:
             user_prompt = ""  # Default to empty if dataset not matched
-        prompt = [{"role": "user", "content": user_prompt}]
+        if args.self_segment_reasoning:
+            prompt = [
+                # {"role": "system", "content": "When you are thinking, i.e., between <think> </think>, after you finish each thinking step (generally a few sentences), you must write a mark <break> before you proceed. This is crucial and helps us process your response. Do not write <break> outside thinking but instead write them between thinking start (<think>) and thinking end (</think>)"},
+                # {"role": "system", "content": "Within your internal thinking process, i.e., between <think> </think>, separate each thinking step with a special mark ###. This is crucial and helps us process your response. Note that this format requirement is for your internal thinking after <think> <think>. not in the response."},
+                # 
+                {"role": "system", "content": "Within your internal thinking process, i.e., between <think> </think>, separate each thinking steps with a special mark <step>. This is crucial and helps us process your response. Note that this format requirement is for your internal thinking after <think> <think>, not in the response. <think> This is the format I should follow. <step> Step 1 ... step 1 ends. <step> Step 2 ... step 2 ends. <step> Step 3 ... step 3 ends.</think>"},
+                # {"role": "system", "content": 'Within your internal thinking process, i.e., between <think> </think>, separate each thinking step with three newlines instead of two, i.e., when you want to write "\n\n", write "\n\n\n" instead. This is crucial and helps us process your response. Note that this format requirement is for your internal thinking between <think> <think>, not in the response. \n\n'},
+                {"role": "user", "content": user_prompt}
+            ]
+        else:
+            prompt = [{"role": "user", "content": user_prompt}]
         prompt = tokenizer.apply_chat_template(prompt, tokenize=False, add_generation_prompt=True)
         input_list.append(prompt)
     

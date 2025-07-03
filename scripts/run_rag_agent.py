@@ -549,7 +549,7 @@ def main():
                     fetched_pages = dict(fetched_contents)
                     full_page_str = json.dumps(fetched_pages, ensure_ascii=False, indent=2)
                     # Append full page content to the prompt
-                    full_page_str_trunc = fine_grained_truncation(full_page_str)
+                    full_page_str_trunc = fine_grained_truncation(seq['prompt'], full_page_str)
                     append_text = f"\n{BEGIN_FULL_PAGE}\n{full_page_str_trunc}\n{END_FULL_PAGE}\n"
                     seq['prompt'] += append_text
                     seq['output'] += append_text

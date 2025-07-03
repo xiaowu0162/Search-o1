@@ -354,13 +354,25 @@ def get_naive_rag_instruction(question, documents):
 
 
 
-def get_task_instruction_openqa(question, model_name=None):
+def get_task_instruction_openqa(question, model_name=None, self_segment_reasoning=False):
+    assert not self_segment_reasoning or model_name == 'qwq'
     if model_name == 'qwq':
-        user_prompt = (
-            'Please answer the following question. '
-            'You should provide your final answer in the format \\boxed{YOUR_ANSWER}.\n\n'
-            f'Question:\n{question}\n\n'
-        )
+        if self_segment_reasoning:
+            # For example, write "<break>\n\nWait" instead of "\n\nWait" and "<break>\n\nAlternatively" instead of "<break>\n\nAlternatively". "Wait" and "Alternatively" are just examples and you should apply <break> anywhere when you have a break in the reasoning. 
+            # 'Please answer the following question. '
+            # 'Within your internal thinking process, i.e., between <think> </think>, separate each thinking step with three newlines instead of two, i.e., when you want to write "\n\n", write "\n\n\n" instead. This is crucial and helps us process your response. Note that this format requirement is for your internal thinking between <think> <think>. not in the response.\n\n'
+            user_prompt = (
+                'Please answer the following question. '
+                'You should provide your final answer in the format \\boxed{YOUR_ANSWER}.\n\n'
+                'Within your internal thinking process, i.e., between <think> </think>, separate each thinking steps with a special mark <step>. This is crucial and helps us process your response. Note that this format requirement is for your internal thinking after <think> <think>, not in the response. <think> This is the format I should follow. <step> Step 1 ... step 1 ends. <step> Step 2 ... step 2 ends. <step> Step 3 ... step 3 ends.</think>\n\n'
+                f'Question:\n{question}\n\n'
+            )
+        else:
+            user_prompt = (
+                'Please answer the following question. '
+                'You should provide your final answer in the format \\boxed{YOUR_ANSWER}.\n\n'
+                f'Question:\n{question}\n\n'
+            )
     else:
         user_prompt = (
             'Please answer the following question. You should think step by step to solve it.\n\n'
@@ -369,13 +381,17 @@ def get_task_instruction_openqa(question, model_name=None):
         )
     return user_prompt
 
-def get_task_instruction_math(question, model_name=None):
+def get_task_instruction_math(question, model_name=None, self_segment_reasoning=False):
+    assert not self_segment_reasoning or model_name == 'qwq'
     if model_name == 'qwq':
-        user_prompt = (
-            'Please answer the following math question. '
-            'You should provide your final answer in the format \\boxed{YOUR_ANSWER}.\n\n'
-            f'Question:\n{question}\n\n'
-        )
+        if self_segment_reasoning:
+            raise NotImplementedError
+        else:
+            user_prompt = (
+                'Please answer the following math question. '
+                'You should provide your final answer in the format \\boxed{YOUR_ANSWER}.\n\n'
+                f'Question:\n{question}\n\n'
+            )
     else:
         user_prompt = (
             'Please answer the following math question. You should think step by step to solve it.\n\n'
@@ -384,13 +400,17 @@ def get_task_instruction_math(question, model_name=None):
         )
     return user_prompt
 
-def get_task_instruction_multi_choice(question, model_name=None):
+def get_task_instruction_multi_choice(question, model_name=None, self_segment_reasoning=False):
+    assert not self_segment_reasoning or model_name == 'qwq'
     if model_name == 'qwq':
-        user_prompt = (
-            'Please answer the following multiple-choice question. '
-            'You should provide your final choice in the format \\boxed{YOUR_CHOICE}.\n\n'
-            f'Question:\n{question}\n\n'
-        )
+        if self_segment_reasoning:
+            raise NotImplementedError
+        else:
+            user_prompt = (
+                'Please answer the following multiple-choice question. '
+                'You should provide your final choice in the format \\boxed{YOUR_CHOICE}.\n\n'
+                f'Question:\n{question}\n\n'
+            )
     elif model_name == 'llama':
         user_prompt = (
             'Please answer the following multiple-choice question. You should think step by step to solve it.\n\n'
@@ -405,16 +425,20 @@ def get_task_instruction_multi_choice(question, model_name=None):
         )
     return user_prompt
 
-def get_task_instruction_code(question, question_title=None, model_name=None):
+def get_task_instruction_code(question, question_title=None, model_name=None, self_segment_reasoning=False):
+    assert not self_segment_reasoning or model_name == 'qwq'
     if model_name == 'qwq':
-        user_prompt = (
-            'Generate a correct Python program that passes all tests for the given problem. '
-            'You should provide your final code within a Python code block using triple backticks (```python\n'
-            'YOUR_CODE\n'
-            '```).\n\n'
-            f'Problem Title: {question_title}\n\n'
-            f'Problem Statement:\n{question}\n\n'
-        )
+        if self_segment_reasoning:
+            raise NotImplementedError
+        else:
+            user_prompt = (
+                'Generate a correct Python program that passes all tests for the given problem. '
+                'You should provide your final code within a Python code block using triple backticks (```python\n'
+                'YOUR_CODE\n'
+                '```).\n\n'
+                f'Problem Title: {question_title}\n\n'
+                f'Problem Statement:\n{question}\n\n'
+            )
     else:
         user_prompt = (
             'You will be given a question (problem specification) and will generate a correct Python program that matches the specification and passes all tests. '
