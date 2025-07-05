@@ -1,8 +1,8 @@
 #!/bin/bash
 
-model_name="Qwen/QwQ-32B"
-server_base="http://localhost:8001/v1"
-subset=$1
+model_name=$1 # "Qwen/QwQ-32B"
+server_base=$2 # "http://localhost:8001/v1"
+subset=$3
 
 # dataset sizes
 # amc - 40

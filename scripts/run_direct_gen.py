@@ -100,6 +100,11 @@ def parse_args():
         action='store_true', 
         help="Self-segment the reasoning trajectory."
     )
+    parser.add_argument(
+        '--self_segment_reasoning_hijacking', 
+        action='store_true', 
+        help="Self-segment the reasoning trajectory via thought hijacking."
+    )
     return parser.parse_args()
 
 
@@ -117,7 +122,7 @@ def main():
     max_tokens = args.max_tokens
 
     # exploration
-    if args.self_segment_reasoning:
+    if args.self_segment_reasoning or args.self_segment_reasoning_hijacking:
         assert 'qwq' in model_path.lower()
     
     # Set default repetition_penalty if not provided
@@ -155,6 +160,10 @@ def main():
             model_short_name = 'ds-qwen-7b'
         elif 'qwen-32b' in model_path.lower():
             model_short_name = 'ds-qwen-32b'
+        elif 'llama-70b' in model_path.lower():
+            model_short_name = 'ds-llama-70b'
+        else:
+            raise NotImplementedError
     elif 'sky-t1' in model_path.lower():
         model_short_name = 'sky-t1'
     else:
@@ -235,6 +244,9 @@ def main():
         else:
             prompt = [{"role": "user", "content": user_prompt}]
         prompt = tokenizer.apply_chat_template(prompt, tokenize=False, add_generation_prompt=True)
+        if args.self_segment_reasoning_hijacking:
+            # add hijacking thoughts
+            prompt += 'Okay, before I start working on the question, I should make sure that I separate each step in my thinking with a step token. <step> Okay'
         input_list.append(prompt)
     
     if subset_num != -1:
@@ -250,6 +262,8 @@ def main():
                 max_tokens = 25600
         else:
             max_tokens = 3096
+    if 'deepseek' in model_path.lower() and 'llama-70b' in model_path.lower():
+        max_tokens = 13000
     
     t_start = time.time()
     # Generate model outputs
