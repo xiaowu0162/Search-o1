@@ -541,7 +541,7 @@ def main():
                         cur_reasoning_text = re.sub(pattern2, " ", cur_reasoning_text, flags=re.DOTALL)
                         cur_full_prefix_tokens = len(tokenizer.encode(cur_prefix, add_special_tokens=False))
                         cur_reasoning_tokens = len(tokenizer.encode(cur_reasoning_text, add_special_tokens=False))
-                        cur_context_budget = MODEL_MAX_LENGTH - PROTECTED_REASONING_BUDGET - (cur_full_prefix_tokens - cur_reasoning_tokens) - 500
+                        cur_context_budget = MODEL_MAX_LENGTH - PROTECTED_REASONING_BUDGET - (cur_full_prefix_tokens - cur_reasoning_tokens) - 1000
                         context_truncated = tokenizer.decode(tokenizer.encode(context_to_truncate, add_special_tokens=False)[:cur_context_budget])
                         return context_truncated 
 
