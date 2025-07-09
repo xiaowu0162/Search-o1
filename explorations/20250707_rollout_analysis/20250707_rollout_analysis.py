@@ -378,13 +378,14 @@ def analyze_node_by_node_v0(prefix, steps, answer, eval_task_type, metric_name, 
     return perf_dict
 
 
-def analyze_node_by_node_v1(prefix, steps, answer, eval_task_type, metric_name, n_sample_per_node, node_join_char='\n\n'):
+def analyze_node_by_node_v1(analysis_mode, prefix, steps, answer, eval_task_type, metric_name, n_sample_per_node, node_join_char='\n\n', max_steps=10):
+    assert analysis_mode in ['wrong', 'correct']
     print('Prefix:', [prefix])
-    print(f'At most {len(steps)} nodes to run, {n_sample_per_node} samples per node...')
+    print(f'At most {min(max_steps,len(steps))} nodes to run, {n_sample_per_node} samples per node...')
 
     perf_dict = {}
     
-    for i_node in range(len(steps)):
+    for i_node in range(min(max_steps,len(steps))):
         cur_prefix_nodes = steps[:i_node]
         cur_prefix_text = prefix + node_join_char.join(cur_prefix_nodes)
 
@@ -404,8 +405,11 @@ def analyze_node_by_node_v1(prefix, steps, answer, eval_task_type, metric_name, 
             'metrics': metrics
         }
         cur_node_mean_metrics = np.mean(metrics)
-        if cur_node_mean_metrics == 0:
+        if analysis_mode == 'wrong' and cur_node_mean_metrics == 0:
             print(f'Stopping at step {i_node} due to all samples failing.')
+            break
+        elif analysis_mode == 'correct' and cur_node_mean_metrics == 1:
+            print(f'Stopping at step {i_node} due to all samples succeeding.')
             break
         else:
             print(f'Step {i_node}, mean metrics {round(cur_node_mean_metrics, 4)}, continuing')
@@ -413,7 +417,7 @@ def analyze_node_by_node_v1(prefix, steps, answer, eval_task_type, metric_name, 
 
     
 if __name__ == '__main__':
-    task = 'gpqa' # 'math500'
+    task = 'gpqa' # 'math500' 'gpqa' 'bamboogle'
     subset = 'correct'
     assert subset in ['wrong', 'correct']
     port = 8004
@@ -465,21 +469,31 @@ if __name__ == '__main__':
     
     n_sample_per_node = 20
 
-    out_logs = []
+    out_file = f'perf_dicts_{subset}_only_{task}_{datetime.now().strftime("%Y%m%d-%H%M")}.jsonl'
+    out_f = open(out_file, 'w')
+
+    # out_logs = []
     for entry in tqdm(interested_logs):
         thoughts = entry['Output'].split('</think>')[0]
         thoughts_segmented_v2 = segment_thoughts_v2(thoughts)
         answer = entry['answer'] if 'answer' in entry else entry['Correct Answer']
-        out_logs.append({
+        # out_logs.append({
+        #     'item': entry,
+        #     'perf_dict': analyze_node_by_node_v1(entry['Question'], thoughts_segmented_v2, answer, eval_task_type, metric_name, n_sample_per_node=n_sample_per_node)
+        # })
+        print(json.dumps({
             'item': entry,
-            'perf_dict': analyze_node_by_node_v1(entry['Question'], thoughts_segmented_v2, answer, eval_task_type, metric_name, n_sample_per_node=n_sample_per_node)
-        })
+            'perf_dict': analyze_node_by_node_v1(subset, entry['Question'], thoughts_segmented_v2, answer, 
+                                                 eval_task_type, metric_name, n_sample_per_node=n_sample_per_node)
+        }), file=out_f, flush=True)
         
     # for i_node in range(len(thoughts_segmented_v2)):
     #     print(i_node, perf_dict[i_node]['metrics'], np.mean(perf_dict[i_node]['metrics']))
 
-    out_file = f'perf_dicts_{subset}_only_{task}_{datetime.now().strftime("%Y%m%d-%H%M")}.json'
-    json.dump(out_logs, open(out_file, 'w'))
+    # json.dump(out_logs, open(out_file, 'w'))
+    out_f.close()
+
+    
     
 
     

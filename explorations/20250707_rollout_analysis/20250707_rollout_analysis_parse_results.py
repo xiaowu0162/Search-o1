@@ -5,8 +5,10 @@ from collections import Counter
 
 
 result_log = sys.argv[1]
-logs = json.load(open(result_log))
-
+try:
+    logs = json.load(open(result_log))
+except:
+    logs = [json.loads(line) for line in open(result_log).readlines()]
 
 failure_loc = []
 counts = Counter([len(x['perf_dict']) for x in logs])

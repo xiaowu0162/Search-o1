@@ -1,4 +1,6 @@
 # custom ignores 
+*json
+*jsonl
 data/
 cache/
 outputs/
