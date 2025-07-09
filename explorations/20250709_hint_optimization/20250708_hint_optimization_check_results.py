@@ -40,16 +40,19 @@ def main(rollout_file, hint_dir):
         if str(cur_qid) in base_rollout_scores:
             print(f'\tBase rollout score without hint:', base_rollout_scores[str(cur_qid)])
         print('\t', {k: np.mean(cur_hint_log['hint_rollout_results'][k]['0']['metrics']) for k in cur_hint_log['hint_rollout_results']}, sep='')
-
+        # print('\t', {k: np.mean(cur_hint_log['hint_rollout_results'][k]['0']['hint']) for k in cur_hint_log['hint_rollout_results']}, sep='')
+        print('\tInitial hint:', cur_hint_log['hint_optimization_history'][0]['hint'])
+        print('\tFinal hint:', cur_hint_log['hint_optimization_history'][0]['hint'])
 
 
 if __name__ == '__main__':
-    task = 'gpqa'   # math500 bamboogle gpqa
+    task = 'bamboogle'   # math500 bamboogle gpqa
 
     hint_dir = f'/fsx-comem/diwu0162/Search-o1/explorations/202507_hint_optimization_logs/{task}/'
     
     # rollout_file = '/fsx-comem/diwu0162/Search-o1/explorations/20250707_rollout_analysis/perf_dicts_wrong_only_math500_20250708-1641.json'
-    rollout_file = '/fsx-comem/diwu0162/Search-o1/explorations/20250707_rollout_analysis/perf_dicts_correct_only_gpqa_20250708-1744.json'
+    # rollout_file = '/fsx-comem/diwu0162/Search-o1/explorations/20250707_rollout_analysis/perf_dicts_wrong_only_gpqa_20250709-1517.jsonl'
+    rollout_file = '/fsx-comem/diwu0162/Search-o1/explorations/20250707_rollout_analysis/perf_dicts_wrong_only_bamboogle_20250708-0443.json'
     assert task in rollout_file
     
     main(rollout_file, hint_dir)

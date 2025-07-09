@@ -17,16 +17,26 @@ from typing import List, Dict
 ##############################################################################
 OPENAI_REQUEST_TIMEOUT = 60*60*24 
 
-student_model_port = 8006
+student_model_port = 8001
 student_model_name = 'Qwen/QwQ-32B'
 student_model_client = OpenAI(base_url=f"http://localhost:{student_model_port}/v1", api_key="EMPTY", timeout=OPENAI_REQUEST_TIMEOUT)
 
 teacher_model_name = "gpt-4o"
-teacher_model_client = AzureOpenAI(
-    api_version='2024-10-21',
-    api_key='f9f1776c5da04fc8ba1c3ccd6a8faeeb',
-    azure_endpoint='https://azure-services-fair-openai1-westus.azure-api.net',    
-)
+
+if teacher_model_name == "gpt-4o":
+    teacher_model_client = AzureOpenAI(
+        api_version='2024-10-21',
+        api_key='f9f1776c5da04fc8ba1c3ccd6a8faeeb',
+        azure_endpoint='https://azure-services-fair-openai1-westus.azure-api.net',    
+    )
+elif teacher_model_name == "o3":
+    teacher_model_client = AzureOpenAI(
+        api_version='2024-10-21',
+        api_key='f9f1776c5da04fc8ba1c3ccd6a8faeeb',
+        azure_endpoint='https://azure-services-fair-openai1-westus.azure-api.net',    
+    )
+else:
+    raise NotImplementedError
 
 def _call_teacher_llm(messages: List[Dict], *, temperature: float = 0.3, max_tokens: int = 1500):
     """Call the teacher LLM with retries."""
@@ -576,9 +586,11 @@ def iterative_hint_optimization(question, answer, steps, hint_injection_loc, tas
 
 
 if __name__ == '__main__':
+    exp_id = '20250709_v2'
+
     task = 'bamboogle'   # math500 gpqa bamboogle
     n_optimize_iters = 20
-    out_dir = f'202507_hint_optimization_logs/{task}/'
+    out_dir = f'202507_hint_optimization_logs/{exp_id}/{task}/'
     os.makedirs(out_dir, exist_ok=True)
 
     ################################################
@@ -639,9 +651,9 @@ if __name__ == '__main__':
                 # f'best_iter_{best_iter_idx}': roll_out_single_node_with_hint(question, hint_history[best_iter_idx], all_pred_steps, hint_injection_loc,
                 #                                                              answer, task, eval_task_type, metric_name, n_sample_per_node=10,
                 #                                                              node_join_char='\n\n', max_tokens=20000),
-                f'last_iter_{n_optimize_iters-1}': roll_out_single_node_with_hint(question, hint_history[-1], all_pred_steps, hint_injection_loc, answer, task, 
-                                                                                eval_task_type, metric_name, n_sample_per_node=10, 
-                                                                                node_join_char='\n\n', max_tokens=20000),
+                f'last_iter_hint': roll_out_single_node_with_hint(question, hint_history[-1], all_pred_steps, hint_injection_loc, answer, task, 
+                                                                  eval_task_type, metric_name, n_sample_per_node=10, 
+                                                                  node_join_char='\n\n', max_tokens=20000),
             }
         }
 
@@ -652,7 +664,7 @@ if __name__ == '__main__':
             'no_hint': np.mean(out_dict['hint_rollout_results']['no_hint'][hint_injection_loc]['metrics']),
             'initial_hint': np.mean(out_dict['hint_rollout_results']['initial_hint'][hint_injection_loc]['metrics']),
             # f'best_iter_{best_iter_idx}': np.mean(out_dict['hint_rollout_results'][f'best_iter_{best_iter_idx}'][hint_injection_loc]['metrics']),
-            f'last_iter_{n_optimize_iters-1}': np.mean(out_dict['hint_rollout_results'][f'last_iter_{n_optimize_iters-1}'][hint_injection_loc]['metrics'])
+            f'last_iter_hint': np.mean(out_dict['hint_rollout_results'][f'last_iter_hint'][hint_injection_loc]['metrics'])
         }})
         
 
