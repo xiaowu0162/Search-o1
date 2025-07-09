@@ -12,16 +12,24 @@ from datetime import datetime
 from typing import List, Dict
 
 
+
+# moved parameters here for fast update
+
+exp_id = '20250709_v2'
+teacher_model_name = "o3"  # "gpt-4o" "o3"
+student_model_port = 8004
+n_optimize_iters = 10
+task = 'math500'   # math500 gpqa bamboogle
+    
+
 ##############################################################################
 # Client backends
 ##############################################################################
 OPENAI_REQUEST_TIMEOUT = 60*60*24 
 
-student_model_port = 8004
 student_model_name = 'Qwen/QwQ-32B'
 student_model_client = OpenAI(base_url=f"http://localhost:{student_model_port}/v1", api_key="EMPTY", timeout=OPENAI_REQUEST_TIMEOUT)
 
-teacher_model_name = "o3"
 if teacher_model_name == 'o3':
     default_max_tokens = 20000
 elif teacher_model_name == 'gpt-4o':
@@ -44,15 +52,15 @@ def _call_teacher_llm(messages: List[Dict], *, temperature: float = 0.3, max_tok
     """Call the teacher LLM with retries."""
 
     teacher_model_client_4o = globals().get("teacher_model_client_4o")
-    teacher_model_client_o3 = globals().get("teacher_modeteacher_model_client_o3l_client_4o")
+    teacher_model_client_o3 = globals().get("teacher_model_client_o3")
     teacher_model_name = globals().get("teacher_model_name")
     OPENAI_REQUEST_TIMEOUT = globals().get("OPENAI_REQUEST_TIMEOUT")
 
-    @backoff.on_exception(backoff.expo, Exception, max_tries=5, jitter=None)
-    def _chat_once_reasoning():
+    @backoff.on_exception(backoff.constant, Exception, interval=5, jitter=None)
+    def _chat_once_reasoning(model_name=None):
         # resp = teacher_model_client.chat.completions.create(
         resp = teacher_model_client_o3.responses.create(
-            model=teacher_model_name,
+            model=teacher_model_name if model_name is None else model_name,
             input=messages,
             reasoning={"effort": "medium"},
             max_output_tokens=max_tokens,
@@ -61,10 +69,10 @@ def _call_teacher_llm(messages: List[Dict], *, temperature: float = 0.3, max_tok
         # print('Inner', resp)
         return resp.output_text
     
-    @backoff.on_exception(backoff.expo, Exception, max_tries=5, jitter=None)
-    def _chat_once():
+    @backoff.on_exception(backoff.constant, Exception, interval=5, jitter=None)
+    def _chat_once(model_name=None):
         resp = teacher_model_client_4o.chat.completions.create(
-            model=teacher_model_name,
+            model=teacher_model_name if model_name is None else model_name,
             messages=messages,
             temperature=temperature,
             top_p=0.95,
@@ -77,7 +85,7 @@ def _call_teacher_llm(messages: List[Dict], *, temperature: float = 0.3, max_tok
         return _chat_once()
     elif teacher_model_name in ['o3']:
         if force_use_nonreasoning_models:
-            return _chat_once()
+            return _chat_once(model_name='gpt-4o')
         else:
             return _chat_once_reasoning()
     else:
@@ -506,27 +514,47 @@ def roll_out_single_node_with_hint(orig_prefix, hint, steps, step_id, answer, ta
 ##############################################################################
 def propose_initial_hint(question):
     for _ in range(5):
-        system_msg = (
-            "You are an expert tutor. First think step-by-step (this will be visible), "
-            "then *on the very last line* output exactly one JSON object with the "
-            "schema {\"hint\": \"<hint text>\"}. Do NOT wrap the JSON in code "
-            "fences or add anything after it."
-        )
-        user_msg = (
-            "Can you write a hint to this question? The hint should be several sentences and its style should follow first-person self-reflection perspective (e.g., 'I should ...'). Make sure the hints are high-level but contextualised so that similar problems can also benefit from looking at it. Also, do not give out the final answer but focus on the key high-level insight or general workflow. First think step-by-step and then output the hint in JSON in the last line.\n\nQuestion:\n" + question.strip()
-        )
-        try:
-            assistant_reply = _call_teacher_llm([
-                {"role": "system", "content": system_msg},
-                {"role": "user", "content": user_msg},
-            ], max_tokens=default_max_tokens, temperature=0.8)
-            hint_json = _extract_json_block(assistant_reply)
-            return hint_json.get("hint", "")
-        except:
-            # print('JSON extraction error in propose_initial_hint:', assistant_reply)
-            print('caught a JSON extraction error in propose_initial_hint')
-            print('Debug in propose_initial_hint:', assistant_reply)
-            hint_json = {}
+        if teacher_model_name == 'gpt-4o':
+            # system_msg = (
+            #     "You are an expert tutor. First think step-by-step "
+            #     "then *on the last line* output exactly one JSON object with the "
+            #     "schema {\"hint\": \"<hint text>\"}. Do NOT wrap the JSON in code "
+            #     "fences or add anything after it."
+            # )
+            user_msg = (
+                "Can you write a hint to this question? The hint should be several sentences and its style should follow first-person self-reflection perspective (e.g., 'I should ...'). Make sure the hints are general but contextualised (containing some description of the problem context) so that other similar problems can also benefit by looking at the hint. Also, do not give out the final answer but focus on the key insight or general workflows of problem solving. First think step-by-step and then output the hint in JSON in the last line with the schema {\"hint\": \"<hint text>\"}. Do NOT wrap the JSON in code fences or add anything after it.\n\nQuestion:\n" + question.strip()
+            )
+            try:
+                assistant_reply = _call_teacher_llm([
+                    # {"role": "system", "content": system_msg},
+                    {"role": "user", "content": user_msg},
+                ], max_tokens=default_max_tokens, temperature=0.8)
+                hint_json = _extract_json_block(assistant_reply)
+                return hint_json.get("hint", "")
+            except Exception as e:
+                # print('JSON extraction error in propose_initial_hint:', assistant_reply)
+                print('caught a JSON extraction error in propose_initial_hint')
+                print('Debug in propose_initial_hint:', assistant_reply)
+                print(e)
+                hint_json = {}
+        elif teacher_model_name == 'o3':
+            user_msg = (
+                "Can you write a hint to this question? The hint should be several sentences and its style should follow first-person self-reflection perspective (e.g., 'I should ...'). Make sure the hints are general but contextualised (containing some description of the problem context) so that other similar problems can also benefit by looking at the hint. Also, do not give out the final answer but focus on the key insight or general workflows of problem solving. Directly write the hint in your response starting ### Hint.\n\nQuestion: \n\nQuestion:\n" + question.strip()
+            )
+            try:
+                assistant_reply = _call_teacher_llm([
+                    # {"role": "system", "content": system_msg},
+                    {"role": "user", "content": user_msg},
+                ], max_tokens=default_max_tokens, temperature=0.8)
+                # hint_json = _extract_json_block(assistant_reply)
+                hint_json = {}
+                hint_text = hint_json.get("hint", "")
+                hint_text = assistant_reply.split('### Hint')[-1].strip()
+                return hint_text
+            except:
+                hint_json = {}
+        else:
+            raise NotImplementedError
     return hint_json.get("hint", "")
         
 
@@ -534,28 +562,47 @@ def refine_hint(question, prev_hint, student_preds):
     for _ in range(5):
         student_structured = {f"Attempt {i}": p for i, p in enumerate(student_preds)}
         attempts_json = json.dumps(student_structured, indent=2)
-        system_msg = (
-            "You are an expert tutor. First think step-by-step (this will be visible), "
-            "then *on the very last line* output exactly one JSON object with the "
-            "schema {\"hint\": \"<hint text>\"}. Do NOT wrap the JSON in code "
-            "fences or add anything after it."
-        )
-        user_msg = (
-            "Here are ten attempts from a model trying to solve the question based on an earlier hint. Revise the hint so that the model can better understand and follow it. The style should follow first-person self-reflection perspective Make sure the hints are high-level but contextualised so that similar problems can also benefit from looking at it. Also, do not give out the final answer but focus on the key high-level insight or general workflow. First think step-by-step and then output the hint in JSON in the last line."
-            "Use first-person perspective.\n\nQuestion: " + question.strip() + "\n\nPrevious Hint: " + prev_hint + "\n\nModel Attempts: " + attempts_json
-        )
-        try:
-            assistant_reply = _call_teacher_llm([
-                {"role": "system", "content": system_msg},
-                {"role": "user", "content": user_msg},
-            ], max_tokens=default_max_tokens, temperature=0.8)
-            # hint_json = _extract_json_block(assistant_reply)
-            hint_json = _extract_json_block(assistant_reply)
-            return hint_json.get("hint", "")
-        except:
-            # print('JSON extraction error in refine_hint:', assistant_reply)
-            print('caught a JSON extraction error in refine_hint')
-            hint_json = {}
+        # system_msg = (
+        #     "You are an expert tutor. First think step-by-step (this will be visible), "
+        #     "then *on the very last line* output exactly one JSON object with the "
+        #     "schema {\"hint\": \"<hint text>\"}. Do NOT wrap the JSON in code "
+        #     "fences or add anything after it."
+        # )
+        if teacher_model_name == 'gpt-4o':
+            user_msg = (
+                "Here are ten attempts from a student trying to solve the question based on an earlier hint. Revise the hint so that the student can better understand and follow it. The style should follow first-person self-reflection perspective. Make sure the hints are general but contextualised (containing some description of the problem context) so that other similar problems can also benefit by looking at the hint. Also, do not give out the final answer but focus on the key insight or general workflows of problem solving. First think step-by-step and then output the hint in JSON in the last line with the schema {\"hint\": \"<hint text>\"}. Do NOT wrap the JSON in code fences or add anything after it.\n\nQuestion: " + question.strip() + "\n\nPrevious Hint: " + prev_hint + "\n\nStudent Attempts: " + attempts_json
+            )
+            try:
+                assistant_reply = _call_teacher_llm([
+                    # {"role": "system", "content": system_msg},
+                    {"role": "user", "content": user_msg},
+                ], max_tokens=default_max_tokens, temperature=0.8)
+                # hint_json = _extract_json_block(assistant_reply)
+                hint_json = _extract_json_block(assistant_reply)
+                return hint_json.get("hint", "")
+            except:
+                # print('JSON extraction error in refine_hint:', assistant_reply)
+                print('caught a JSON extraction error in refine_hint')
+                # print('Debug in refine_hint:', assistant_reply)
+                hint_json = {}
+        elif teacher_model_name == 'o3':
+            user_msg = (
+                "Here are ten attempts from a student trying to solve the question based on an earlier hint. Revise the hint so that the student can better understand and follow it. The style should follow first-person self-reflection perspective. Make sure the hints are general but contextualised (containing some description of the problem context) so that other similar problems can also benefit by looking at the hint. Also, do not give out the final answer but focus on the key insight or general workflows of problem solving. Directly write the hint in your response starting ### Hint.\n\nQuestion: " + question.strip() + "\n\nPrevious Hint: " + prev_hint + "\n\nStudent Attempts: " + attempts_json
+            )
+            try:
+                assistant_reply = _call_teacher_llm([
+                    # {"role": "system", "content": system_msg},
+                    {"role": "user", "content": user_msg},
+                ], max_tokens=default_max_tokens, temperature=0.8)
+                # hint_json = _extract_json_block(assistant_reply)
+                hint_json = {}
+                hint_text = hint_json.get("hint", "")
+                hint_text = assistant_reply.split('### Hint')[-1].strip()
+                return hint_text
+            except:
+                hint_json = {}
+        else:
+            raise NotImplementedError
     return hint_json.get("hint", "")
 
 def critique_thought_adherence(question, hint, student_preds):
@@ -589,7 +636,7 @@ def iterative_hint_optimization(question, answer, steps, hint_injection_loc, tas
     student_attempt_critique = critique_thought_adherence(question, cur_hint, student_attempts)
     best_prev_adherence_score = np.mean(student_attempt_critique)
     hint_history.append({'hint': cur_hint, 'student_attempts': student_attempts, 'student_attempt_adherence': student_attempt_critique})
-    print({'hint': cur_hint, 'student_attempt_critique': student_attempt_critique})
+    print({'iter': 'init', 'hint': cur_hint, 'student_attempt_critique': student_attempt_critique})
     for i in tqdm(range(n_iters), 'Optimizing single example'):
         prev_hint_for_logging = cur_hint
         update_hint = False
@@ -612,10 +659,6 @@ def iterative_hint_optimization(question, answer, steps, hint_injection_loc, tas
 
 
 if __name__ == '__main__':
-    exp_id = '20250709_v2'
-
-    task = 'math500'   # math500 gpqa bamboogle
-    n_optimize_iters = 10
     out_dir = f'logs/{exp_id}/teacher{teacher_model_name}_{n_optimize_iters}iters/{task}/'
     os.makedirs(out_dir, exist_ok=True)
 
