@@ -17,37 +17,53 @@ from typing import List, Dict
 ##############################################################################
 OPENAI_REQUEST_TIMEOUT = 60*60*24 
 
-student_model_port = 8001
+student_model_port = 8004
 student_model_name = 'Qwen/QwQ-32B'
 student_model_client = OpenAI(base_url=f"http://localhost:{student_model_port}/v1", api_key="EMPTY", timeout=OPENAI_REQUEST_TIMEOUT)
 
-teacher_model_name = "gpt-4o"
-
-if teacher_model_name == "gpt-4o":
-    teacher_model_client = AzureOpenAI(
-        api_version='2024-10-21',
-        api_key='f9f1776c5da04fc8ba1c3ccd6a8faeeb',
-        azure_endpoint='https://azure-services-fair-openai1-westus.azure-api.net',    
-    )
-elif teacher_model_name == "o3":
-    teacher_model_client = AzureOpenAI(
-        api_version='2024-10-21',
-        api_key='f9f1776c5da04fc8ba1c3ccd6a8faeeb',
-        azure_endpoint='https://azure-services-fair-openai1-westus.azure-api.net',    
-    )
+teacher_model_name = "o3"
+if teacher_model_name == 'o3':
+    default_max_tokens = 20000
+elif teacher_model_name == 'gpt-4o':
+    default_max_tokens = 1500
 else:
     raise NotImplementedError
 
-def _call_teacher_llm(messages: List[Dict], *, temperature: float = 0.3, max_tokens: int = 1500):
+teacher_model_client_4o = AzureOpenAI(
+    api_version='2024-10-21',
+    api_key=open('/fsx-comem/diwu0162/Search-o1/azure_api_key_gpt-4o.txt').readline().strip(),
+    azure_endpoint='https://azure-services-fair-openai1-westus.azure-api.net',    
+)
+teacher_model_client_o3 = AzureOpenAI(
+    api_version='2025-03-01-preview',
+    api_key=open('/fsx-comem/diwu0162/Search-o1/azure_api_key_o3.txt').readline().strip(),
+    azure_endpoint='https://azure-services-fair-openai1-eastus2n2.azure-api.net',    
+)
+
+def _call_teacher_llm(messages: List[Dict], *, temperature: float = 0.3, max_tokens: int = 1500, force_use_nonreasoning_models=False):
     """Call the teacher LLM with retries."""
 
-    teacher_model_client = globals().get("teacher_model_client")
+    teacher_model_client_4o = globals().get("teacher_model_client_4o")
+    teacher_model_client_o3 = globals().get("teacher_modeteacher_model_client_o3l_client_4o")
     teacher_model_name = globals().get("teacher_model_name")
     OPENAI_REQUEST_TIMEOUT = globals().get("OPENAI_REQUEST_TIMEOUT")
 
     @backoff.on_exception(backoff.expo, Exception, max_tries=5, jitter=None)
+    def _chat_once_reasoning():
+        # resp = teacher_model_client.chat.completions.create(
+        resp = teacher_model_client_o3.responses.create(
+            model=teacher_model_name,
+            input=messages,
+            reasoning={"effort": "medium"},
+            max_output_tokens=max_tokens,
+            timeout=OPENAI_REQUEST_TIMEOUT,
+        )
+        # print('Inner', resp)
+        return resp.output_text
+    
+    @backoff.on_exception(backoff.expo, Exception, max_tries=5, jitter=None)
     def _chat_once():
-        resp = teacher_model_client.chat.completions.create(
+        resp = teacher_model_client_4o.chat.completions.create(
             model=teacher_model_name,
             messages=messages,
             temperature=temperature,
@@ -57,13 +73,22 @@ def _call_teacher_llm(messages: List[Dict], *, temperature: float = 0.3, max_tok
         )
         return resp.choices[0].message.content
 
-    return _chat_once()
+    if teacher_model_name in ['gpt-4o']:
+        return _chat_once()
+    elif teacher_model_name in ['o3']:
+        if force_use_nonreasoning_models:
+            return _chat_once()
+        else:
+            return _chat_once_reasoning()
+    else:
+        raise NotImplementedError
+    
 
 ##############################################################################
 # JSON extraction helpers
 ##############################################################################
 
-OPENAI_JSON_RE = re.compile(r"\{[\s\S]*?\}")  # greedy braces-based match of JSON blocks
+OPENAI_JSON_RE = re.compile(r"\{[\s\S]*?\}")  # greedy braces-based match of JSON blocksif
 
 
 def _extract_json_block(text: str) -> Dict:
@@ -494,12 +519,13 @@ def propose_initial_hint(question):
             assistant_reply = _call_teacher_llm([
                 {"role": "system", "content": system_msg},
                 {"role": "user", "content": user_msg},
-            ], temperature=0.8)
+            ], max_tokens=default_max_tokens, temperature=0.8)
             hint_json = _extract_json_block(assistant_reply)
             return hint_json.get("hint", "")
         except:
             # print('JSON extraction error in propose_initial_hint:', assistant_reply)
             print('caught a JSON extraction error in propose_initial_hint')
+            print('Debug in propose_initial_hint:', assistant_reply)
             hint_json = {}
     return hint_json.get("hint", "")
         
@@ -522,7 +548,7 @@ def refine_hint(question, prev_hint, student_preds):
             assistant_reply = _call_teacher_llm([
                 {"role": "system", "content": system_msg},
                 {"role": "user", "content": user_msg},
-            ], max_tokens=1500, temperature=0.8)
+            ], max_tokens=default_max_tokens, temperature=0.8)
             # hint_json = _extract_json_block(assistant_reply)
             hint_json = _extract_json_block(assistant_reply)
             return hint_json.get("hint", "")
@@ -545,7 +571,7 @@ def critique_thought_adherence(question, hint, student_preds):
             assistant_reply = _call_teacher_llm([
                 {"role": "system", "content": system_msg},
                 {"role": "user", "content": user_msg},
-            ], max_tokens=512)
+            ], max_tokens=500, force_use_nonreasoning_models=True)
             score_json = _extract_json_block(assistant_reply)
             raw_score = int(score_json.get("score", 1))
         except Exception:
@@ -588,9 +614,9 @@ def iterative_hint_optimization(question, answer, steps, hint_injection_loc, tas
 if __name__ == '__main__':
     exp_id = '20250709_v2'
 
-    task = 'bamboogle'   # math500 gpqa bamboogle
-    n_optimize_iters = 20
-    out_dir = f'202507_hint_optimization_logs/{exp_id}/{task}/'
+    task = 'math500'   # math500 gpqa bamboogle
+    n_optimize_iters = 10
+    out_dir = f'logs/{exp_id}/teacher{teacher_model_name}_{n_optimize_iters}iters/{task}/'
     os.makedirs(out_dir, exist_ok=True)
 
     ################################################
@@ -669,3 +695,18 @@ if __name__ == '__main__':
         
 
 
+
+
+    # some sanity check code
+    # prompt = "Write a bash script that takes a matrix represented as a string with format '[1,2],[3,4],[5,6]' and prints the transpose in the same format."
+    # response = _call_teacher_llm(messages=[
+    #     {
+    #         'role': 'system',
+    #         'content': 'You are a helpful assistant.'
+    #     },
+    #     {
+    #         'role': 'user',
+    #         'content': prompt
+    #     },
+    # ])
+    # print(response)
