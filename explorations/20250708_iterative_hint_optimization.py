@@ -41,6 +41,7 @@ def _call_teacher_llm(messages: List[Dict], *, temperature: float = 0.3, max_tok
             model=teacher_model_name,
             messages=messages,
             temperature=temperature,
+            top_p=0.95,
             max_tokens=max_tokens,
             timeout=OPENAI_REQUEST_TIMEOUT,
         )
@@ -428,16 +429,19 @@ def roll_out_single_node_with_hint(orig_prefix, hint, steps, step_id, answer, ta
         assert instruction_new != instruction
         return instruction_new
 
-    # print(f'Roll out with hint injected at (before) node {step_id}, {n_sample_per_node} samples per node...')
-
     perf_dict = {}
     
     cur_prefix_nodes = steps[:step_id]
     # cur_prefix_text = prefix + node_join_char.join(cur_prefix_nodes)
-    formatted_question = process_question_instruct_add_hint(orig_prefix)
-    hint_str = f'[hint] {hint} [end of hint]\n\nOkay,'
+    if hint != "":
+        formatted_question = process_question_instruct_add_hint(orig_prefix)
+        hint_str = f'[hint] {hint} [end of hint]\n\nOkay,'
+    else:
+        formatted_question = orig_prefix
+        hint_str = ''
     final_prompt = formatted_question + node_join_char.join(cur_prefix_nodes) + hint_str
-
+    
+    # print(f'Roll out with hint injected at (before) node {step_id}, {n_sample_per_node} samples per node...')
     # print('Prompt:', [final_prompt])
 
     responses = student_model_client.completions.create(model=student_model_name, prompt=final_prompt, n=n_sample_per_node, temperature=0.7, top_p=0.8, 
@@ -480,7 +484,7 @@ def propose_initial_hint(question):
             assistant_reply = _call_teacher_llm([
                 {"role": "system", "content": system_msg},
                 {"role": "user", "content": user_msg},
-            ])
+            ], temperature=0.8)
             hint_json = _extract_json_block(assistant_reply)
             return hint_json.get("hint", "")
         except:
@@ -508,7 +512,7 @@ def refine_hint(question, prev_hint, student_preds):
             assistant_reply = _call_teacher_llm([
                 {"role": "system", "content": system_msg},
                 {"role": "user", "content": user_msg},
-            ], max_tokens=1500)
+            ], max_tokens=1500, temperature=0.8)
             # hint_json = _extract_json_block(assistant_reply)
             hint_json = _extract_json_block(assistant_reply)
             return hint_json.get("hint", "")
@@ -547,17 +551,26 @@ def iterative_hint_optimization(question, answer, steps, hint_injection_loc, tas
     student_attempts = roll_out_single_node_with_hint(question, cur_hint, steps, hint_injection_loc, answer, task, 
                                                       eval_task_type, metric_name, n_sample_per_node=10, node_join_char='\n\n', max_tokens=500)[hint_injection_loc]['preds']
     student_attempt_critique = critique_thought_adherence(question, cur_hint, student_attempts)
+    best_prev_adherence_score = np.mean(student_attempt_critique)
     hint_history.append({'hint': cur_hint, 'student_attempts': student_attempts, 'student_attempt_adherence': student_attempt_critique})
     print({'hint': cur_hint, 'student_attempt_critique': student_attempt_critique})
     for i in tqdm(range(n_iters), 'Optimizing single example'):
+        prev_hint_for_logging = cur_hint
+        update_hint = False
         new_hint = refine_hint(question, cur_hint, student_attempts)
-        if new_hint != "":
-            cur_hint = new_hint
+        if new_hint == "":
+            continue
         student_attempts = roll_out_single_node_with_hint(question, cur_hint, steps, hint_injection_loc, answer, task, 
                                                           eval_task_type, metric_name, n_sample_per_node=10, node_join_char='\n\n', max_tokens=500)[hint_injection_loc]['preds']
         student_attempt_critique = critique_thought_adherence(question, cur_hint, student_attempts)
-        hint_history.append({'hint': cur_hint, 'student_attempts': student_attempts, 'student_attempt_adherence': student_attempt_critique})
-        print({'hint': cur_hint, 'average_adherence': np.mean(student_attempt_critique)})
+        # new: update only if student thought adherence improves
+        if np.mean(student_attempt_critique) >= best_prev_adherence_score:
+            best_prev_adherence_score = np.mean(student_attempt_critique)
+            cur_hint = new_hint
+            update_hint = True
+        hint_history.append({'iter': i, 'prev_hint': prev_hint_for_logging, 'proposed_hint': new_hint, 'hint_updated': update_hint,
+                              'student_attempts': student_attempts, 'student_attempt_adherence': student_attempt_critique})
+        print({'iter': i, 'hint': cur_hint, 'average_adherence': np.mean(student_attempt_critique)})
 
     return hint_history
 
@@ -608,22 +621,24 @@ if __name__ == '__main__':
         hint_history = iterative_hint_optimization(question, answer, all_pred_steps, hint_injection_loc, task, eval_task_type, metric_name, n_optimize_iters)
 
         # find best iter idx
-        best_iter_idx = 0
-        best_critique_score = -1
-        for i_ent, hint_history_entry in enumerate(hint_history):
-            if np.mean(hint_history_entry['student_attempt_adherence']) >= best_critique_score:
-                best_iter_idx = i_ent
-                best_critique_score = np.mean(hint_history_entry['student_attempt_adherence']).item()
+        # best_iter_idx = 0
+        # best_critique_score = -1
+        # for i_ent, hint_history_entry in enumerate(hint_history):
+        #     if np.mean(hint_history_entry['student_attempt_adherence']) >= best_critique_score:
+        #         best_iter_idx = i_ent
+        #         best_critique_score = np.mean(hint_history_entry['student_attempt_adherence']).item()
 
         # rollout and eval hint quality
         out_dict = {
             'hint_optimization_history': hint_history,
             'hint_rollout_results': {
-                'initial': roll_out_single_node_with_hint(question, hint_history[0], all_pred_steps, hint_injection_loc, answer, task, 
+                'no_hint': roll_out_single_node_with_hint(question, "", all_pred_steps, hint_injection_loc, answer, task, 
                                                           eval_task_type, metric_name, n_sample_per_node=10, node_join_char='\n\n', max_tokens=20000),
-                f'best_iter_{best_iter_idx}': roll_out_single_node_with_hint(question, hint_history[best_iter_idx], all_pred_steps, hint_injection_loc,
-                                                                             answer, task, eval_task_type, metric_name, n_sample_per_node=10,
-                                                                             node_join_char='\n\n', max_tokens=20000),
+                'initial_hint': roll_out_single_node_with_hint(question, hint_history[0], all_pred_steps, hint_injection_loc, answer, task, 
+                                                          eval_task_type, metric_name, n_sample_per_node=10, node_join_char='\n\n', max_tokens=20000),
+                # f'best_iter_{best_iter_idx}': roll_out_single_node_with_hint(question, hint_history[best_iter_idx], all_pred_steps, hint_injection_loc,
+                #                                                              answer, task, eval_task_type, metric_name, n_sample_per_node=10,
+                #                                                              node_join_char='\n\n', max_tokens=20000),
                 f'last_iter_{n_optimize_iters-1}': roll_out_single_node_with_hint(question, hint_history[-1], all_pred_steps, hint_injection_loc, answer, task, 
                                                                                 eval_task_type, metric_name, n_sample_per_node=10, 
                                                                                 node_join_char='\n\n', max_tokens=20000),
@@ -634,8 +649,9 @@ if __name__ == '__main__':
         json.dump(out_dict, open(out_file, 'w'), indent=4)
 
         print({'hint_rollout_metrics': {
-            'initial': np.mean(out_dict['hint_rollout_results']['initial'][hint_injection_loc]['metrics']),
-            f'best_iter_{best_iter_idx}': np.mean(out_dict['hint_rollout_results'][f'best_iter_{best_iter_idx}'][hint_injection_loc]['metrics']),
+            'no_hint': np.mean(out_dict['hint_rollout_results']['no_hint'][hint_injection_loc]['metrics']),
+            'initial_hint': np.mean(out_dict['hint_rollout_results']['initial_hint'][hint_injection_loc]['metrics']),
+            # f'best_iter_{best_iter_idx}': np.mean(out_dict['hint_rollout_results'][f'best_iter_{best_iter_idx}'][hint_injection_loc]['metrics']),
             f'last_iter_{n_optimize_iters-1}': np.mean(out_dict['hint_rollout_results'][f'last_iter_{n_optimize_iters-1}'][hint_injection_loc]['metrics'])
         }})
         

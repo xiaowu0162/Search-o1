@@ -418,9 +418,9 @@ def analyze_node_by_node_v1(analysis_mode, prefix, steps, answer, eval_task_type
     
 if __name__ == '__main__':
     task = 'gpqa' # 'math500' 'gpqa' 'bamboogle'
-    subset = 'correct'
+    subset = 'wrong'
     assert subset in ['wrong', 'correct']
-    port = 8004
+    port = 8002
     model_name = 'Qwen/QwQ-32B'
     
     OPENAI_REQUEST_TIMEOUT = 60*60*24 
