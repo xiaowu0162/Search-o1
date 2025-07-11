@@ -1,6 +1,6 @@
 #!/bin/bash
 
-model_name=$1 # "Qwen/QwQ-32B"
+model_name=$1 # "Qwen/QwQ-32B"  deepseek-ai/DeepSeek-R1-Distill-Llama-8B  deepseek-ai/DeepSeek-R1-Distill-Qwen-7B
 server_base=$2 # "http://localhost:8001/v1"
 subset=$3
 

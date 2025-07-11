@@ -262,7 +262,7 @@ def main():
                 max_tokens = 25600
         else:
             max_tokens = 3096
-    if 'deepseek' in model_path.lower() and 'llama-70b' in model_path.lower():
+    if 'deepseek' in model_path.lower() and ('llama' in model_path.lower() or 'qwen' in model_path.lower()):
         max_tokens = 13000
     
     t_start = time.time()
