@@ -46,6 +46,30 @@ fi
 
 
 ##############################################################################
+# Direct Generation with hints
+##############################################################################
+
+if [ $subset == "hint1" ]; then
+    python scripts/run_direct_gen_with_oracle_hints.py --dataset_name amc --split test --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} --hint_file /fsx-comem/diwu0162/Search-o1/explorations/20250710_openthoughts/logs_hint_distillation_eval_task_amc.jsonl
+    python scripts/run_direct_gen_with_oracle_hints.py --dataset_name aime --split test --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} --hint_file /fsx-comem/diwu0162/Search-o1/explorations/20250710_openthoughts/logs_hint_distillation_eval_task_aime.jsonl
+    python scripts/run_direct_gen_with_oracle_hints.py --dataset_name math500 --split test --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} --hint_file /fsx-comem/diwu0162/Search-o1/explorations/20250710_openthoughts/logs_hint_distillation_eval_task_math500.jsonl
+    python scripts/run_direct_gen_with_oracle_hints.py --dataset_name livecode --split test_1to4 --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} --hint_file /fsx-comem/diwu0162/Search-o1/explorations/20250710_openthoughts/logs_hint_distillation_eval_task_livecode.jsonl
+    python scripts/run_direct_gen_with_oracle_hints.py --dataset_name gpqa --split diamond --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} --hint_file /fsx-comem/diwu0162/Search-o1/explorations/20250710_openthoughts/logs_hint_distillation_eval_task_gpqa.jsonl
+    python scripts/run_direct_gen_with_oracle_hints.py --dataset_name bamboogle --split test --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} --hint_file /fsx-comem/diwu0162/Search-o1/explorations/20250710_openthoughts/logs_hint_distillation_eval_task_bamboogle.jsonl
+
+
+    # Don't have hints for these task at this time. 
+    # for ds in nq triviaqa; do
+    #     python scripts/run_direct_gen_with_oracle_hints.py --dataset_name $ds --split test_first500 --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base}
+    # done
+    # for ds in musique hotpotqa 2wiki; do
+    #     python scripts/run_direct_gen_with_oracle_hints.py --dataset_name $ds --split dev_first500 --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base}
+    # done
+fi 
+
+
+
+##############################################################################
 # Baseline 2 Vanilla RAG (retrieve once with the original question)
 ##############################################################################
 if [ $subset == "xxx" ]; then

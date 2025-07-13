@@ -40,6 +40,20 @@ def extract_answer(output, mode='gen'):
                 if inner_matches:
                     extracted_text = inner_matches[-1]  # Take the last match
                 extracted_text = extracted_text.strip("()")
+        
+        # try with another pattern
+        if not matches:
+            pattern = r'(?i)\banswer\s*:\s*(.*?)(?=\n|$)'
+            matches = re.findall(pattern, output)
+            if matches:
+                extracted_text = matches[-1]          # keep the last “answer: …” block
+                if mode in {"choose", "qa"}:          # same post-processing you had before
+                    inner_pattern = r'\\text\{(.*?)\}'
+                    inner_matches = re.findall(inner_pattern, extracted_text)
+                    if inner_matches:
+                        extracted_text = inner_matches[-1]
+                    extracted_text = extracted_text.strip("()")
+                    
     return extracted_text
 
 

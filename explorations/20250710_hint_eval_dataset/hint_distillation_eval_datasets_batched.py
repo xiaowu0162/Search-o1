@@ -11,7 +11,7 @@ import backoff
 from transformers import AutoTokenizer
 
 OPENAI_REQUEST_TIMEOUT = 60 * 60 * 24
-BATCH_SIZE = 32  # batch size for each OpenAI reaquest
+BATCH_SIZE = 8  # batch size for each OpenAI reaquest
 
 
 @backoff.on_exception(backoff.constant, Exception, interval=5)
@@ -46,8 +46,10 @@ def load_direct_pred_logs(task: str):
     return log_name, logs
 
 
-def build_hint_prompt(question: str, teacher_answer: str, teacher_thought_str: str) -> str:
+def build_hint_prompt(question: str, teacher_answer: str, teacher_thought_str: str, tokenizer) -> str:
     """Compose the single prompt string that will be sent to the model."""
+    if len(tokenizer.encode(teacher_thought_str)) > 20000:
+        teacher_thought_str = tokenizer.decode(tokenizer.encode(teacher_thought_str, add_special_tokens=False)[:20000])
     prompt = (
         "You are an expert tutor. Given a question, a final answer written by the teacher, "
         "and a long thinking process written by a teacher, write a brief hint that can help "
@@ -107,7 +109,8 @@ if __name__ == '__main__':
     print('Started openai client')
     print(client.models.list())
 
-    for task in ['gpqa', 'aime', 'amc', 'math500', 'livecode', 'bamboogle']:
+    # for task in ['gpqa', 'aime', 'amc', 'math500', 'livecode', 'bamboogle']:
+    for task in ['math500', 'livecode', 'bamboogle']:
         log_name, logs = load_direct_pred_logs(task)
         out_file_name = f'logs_hint_distillation_eval_task_{task}.jsonl'
 
@@ -143,7 +146,7 @@ if __name__ == '__main__':
                         thoughts = output_field.replace('<think>', '').strip()
                         answer = 'answer unknown due to thinking unfinished'
 
-                    prompts.append(build_hint_prompt(question, answer, thoughts))
+                    prompts.append(build_hint_prompt(question, answer, thoughts, tokenizer))
                     batch_meta.append({
                         'question': question,
                         'teacher_answer': answer,
