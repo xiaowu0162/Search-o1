@@ -29,8 +29,11 @@ def parse_args():
     parser.add_argument('--k_type', type=str, required=True, choices=['self', 'question', 'question_description', 'first_thought_steps'])
     # parser.add_argument('--v_type', type=str, required=True, choices=['hint'])   # no need to experiment for now
     parser.add_argument('--record_top_k', type=int, default=10)
+    parser.add_argument('--remove_oracle_from_top_k_record', action='store_true')
     parser.add_argument('--report_metrics', action='store_true')
-    # parser.add_argument('--n_workers', type=int, default=1)
+    
+    parser.add_argument('--n_workers', type=int, default=1)
+    parser.add_argument('--debug_run', action='store_true')
 
     return parser.parse_args()
 
@@ -45,6 +48,39 @@ def ndcg_at_k(scores, labels, k, gt_label=1):
     relevance = [1 if labels[j] == gt_label else 0 for j in top_k]
     ideal = sorted(relevance, reverse=True)
     return ndcg_score([ideal], [relevance]) if any(ideal) else 0.0
+
+
+
+def batch_run_retrieval(query_data_chunk, args, tokenized_corpus, corpus_values, corpus_labels):
+    bm25 = BM25Okapi(tokenized_corpus)
+    cur_chunk_out_data = []
+    for query, extended_labels, out_data_structure in tqdm(query_data_chunk, 
+                                                           desc=f'Process {mp.current_process().name.split("-")[-1]}'):
+        scores = bm25.get_scores(query.split(" "))
+        all_labels = corpus_labels + extended_labels
+        metrics = {}
+        for k in [1, 3, 5, 10, 50, 100]:
+            metrics[f'recall@{k}'], sorted_indices = recall_at_k(scores, all_labels, k)
+            if k == 1:
+                metrics[f'ndcg@{k}'] = metrics[f'recall@{k}']
+            else:
+                metrics[f'ndcg@{k}'] = ndcg_at_k(scores, all_labels, k)
+
+        # save 
+        if args.remove_oracle_from_top_k_record:
+            top_items_to_save = [corpus_values[idx] for idx in sorted_indices[:args.record_top_k+10] if corpus_labels[idx] == 0][:args.record_top_k]
+        else:
+            top_items_to_save = [corpus_values[idx] for idx in sorted_indices[:args.record_top_k]]
+        out_data_structure['retrieval_result'] = {
+            'metrics': metrics,
+            'top_items': top_items_to_save
+        }
+        cur_chunk_out_data.append(out_data_structure)
+        # print('Query:', query.split(" "))
+        # print('Top-k indices:', sorted_indices[:args.record_top_k])
+        # print('Metrics:',metrics)
+        
+    return cur_chunk_out_data
 
 
 def main():
@@ -65,6 +101,12 @@ def main():
             # prepare key 
             if args.k_type == 'self':
                 corpus_keys.append(corpus_values[-1])
+            elif args.k_type == 'question':
+                corpus_keys.append(entry['question'])
+            elif args.k_type == 'question_description':
+                corpus_keys.append(entry['hint']['content']['applicable_problems'] if entry['hint']['content']['applicable_problems'] else entry['question'])
+            elif args.k_type == 'first_thought_steps':
+                corpus_keys.append(' '.join(entry['teacher_thoughts'].split()[:100]))  # just a simple heuristic
             else:
                 raise NotImplementedError    
             # prepare label        
@@ -78,13 +120,25 @@ def main():
         query_data_raw = [json.loads(line) for line in open(args.query_file).readlines()]
     except:
         query_data_raw = json.load(open(args.query_file))
+    if args.debug_run:
+        query_data_raw = query_data_raw[:50]
+        print(f'Debug run: truncating to {len(query_data_raw)} items')
     for query_entry in query_data_raw:
+        # cleaning hack for livecode
+        query_entry['question'] = query_entry['question'].split('\n\nProblem Statement:\n')[-1]
+
         # prepare value 
         corpus_values.append(query_entry['hint']['content']['hint'])
         
         # prepare key 
         if args.k_type == 'self':
             corpus_keys.append(corpus_values[-1])
+        elif args.k_type == 'question':
+            corpus_keys.append(query_entry['question'])
+        elif args.k_type == 'question_description':
+            corpus_keys.append(query_entry['hint']['content']['applicable_problems'] if query_entry['hint']['content']['applicable_problems'] else query_entry['question'])
+        elif args.k_type == 'first_thought_steps':
+            corpus_keys.append(' '.join(query_entry['teacher_thoughts'].split()[:100]))  # just a simple heuristic
         else:
             raise NotImplementedError    
 
@@ -93,9 +147,12 @@ def main():
         assert sum(cur_chunk_extended_labels) == 1 and len(cur_chunk_extended_labels) == len(query_data_raw)
 
         # prepare query
-        corpus_values.append(entry['hint']['content']['hint'])
         if args.q_type == 'question':
-            cur_query = entry['question']
+            cur_query = query_entry['question']
+        elif args.q_type == 'question_description':
+            cur_query = query_entry['hint']['content']['applicable_problems'] if query_entry['hint']['content']['applicable_problems'] else query_entry['question']
+        elif args.q_type == 'first_thought_steps':
+            cur_query = ' '.join(query_entry['teacher_thoughts'].split()[:100])  # just a simple heuristic
         else:
             raise NotImplementedError 
         
@@ -104,42 +161,69 @@ def main():
             'question': query_entry['question'],
             'hint': query_entry['hint']
         }
-        
         query_data.append([cur_query, cur_chunk_extended_labels, cur_out_data_structure])
 
     print(f'Corpus building complete: {len(corpus_keys)} items from {len(corpus_files)} files.')
 
+    # ##########################################################################
+    # # run retrieval (sequential)
+    # ##########################################################################
+    # tokenized_corpus = [doc.split(" ") for doc in corpus_values]
+    # bm25 = BM25Okapi(tokenized_corpus)
+    # out_data = []
+    # all_metrics = []
+    # for query, extended_labels, out_data_structure in tqdm(query_data, desc='Running retrieval'):
+    #     scores = bm25.get_scores(query.split(" "))
+    #     all_labels = corpus_labels + extended_labels
+    #     # calculate metrics
+    #     metrics = {}
+    #     for k in [5, 10, 50, 100]:
+    #         metrics[f'recall@{k}'], sorted_indices = recall_at_k(scores, all_labels, k)
+    #         metrics[f'ndcg@{k}'] = ndcg_at_k(scores, all_labels, k)
+
+    #     out_data_structure['retrieval_result'] = {
+    #         'metrics': metrics,
+    #         'top_items': [corpus_values[idx] for idx in sorted_indices[:args.record_top_k]]
+    #     }
+    #     all_metrics.append(metrics)
+    #     out_data.append(out_data_structure)
 
     ##########################################################################
-    # run retrieval
+    # run retrieval (parallel)
     ##########################################################################
-    tokenized_corpus = [doc.split(" ") for doc in corpus_values]
-    bm25 = BM25Okapi(tokenized_corpus)
+    # chunking data
+    num_processes = args.n_workers
+    query_data_chunked = []
+    chunk_size = len(query_data) // num_processes
+    remainder = len(query_data) % num_processes
+    start = 0
+    for i in range(num_processes):
+        end = start + chunk_size + (1 if i < remainder else 0)
+        query_data_chunked.append(query_data[start:end])
+        start = end
+
+    # workload
+    tokenized_corpus = [[x for x in doc.split(" ") if x.strip() != ''] for doc in corpus_keys]
+    
+    # init workers and split work
+    print('Setting num processes = {} with retriever {}'.format(num_processes, args.retriever))
+    mp.set_start_method('spawn')
+    pool = mp.Pool(num_processes)
+    worker = partial(batch_run_retrieval, args=args, tokenized_corpus=tokenized_corpus,
+                     corpus_values=corpus_values, corpus_labels=corpus_labels)
+
+    # collect work and wrap up
     out_data = []
-    all_metrics = []
-    for query, extended_labels, out_data_structure in tqdm(query_data, desc='Running retrieval'):
-        scores = bm25.get_scores(query.split(" "))
-        all_labels = corpus_labels + extended_labels
-        # calculate metrics
-        metrics = {}
-        for k in [5, 10, 50, 100]:
-            metrics[f'recall@{k}'], sorted_indices = recall_at_k(scores, all_labels, k)
-            metrics[f'ndcg@{k}'] = ndcg_at_k(scores, all_labels, k)
-
-        out_data_structure['retrieval_result'] = {
-            'metrics': metrics,
-            'top_items': [corpus_values[idx] for idx in sorted_indices[:args.record_top_k]]
-        }
-        all_metrics.append(metrics)
-        out_data.append(out_data_structure)
-
+    for d in pool.imap_unordered(worker, query_data_chunked):
+        out_data += d
+    pool.close()
 
     ##########################################################################
     # print scores and write retrieval results to file
     ##########################################################################
     print('Retrieval metrics:')
-    for k in all_metrics[0]:
-        print(f'\t{k}: {round(np.mean([x[k] for x in all_metrics]), 4)}')
+    for k in out_data[0]['retrieval_result']['metrics']:
+        print(f'\t{k}: {round(np.mean([x["retrieval_result"]["metrics"][k] for x in out_data]), 4)}')
 
     json.dump(out_data, open(args.out_file, 'w'), indent=4)
     print('Saved to', args.out_file)

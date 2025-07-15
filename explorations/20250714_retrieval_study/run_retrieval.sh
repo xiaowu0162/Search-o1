@@ -3,7 +3,8 @@
 task=$1
 q_type=$2       # 'question', 'question_description', 'first_thought_steps'
 k_type=$3       # 'self', 'question', 'question_description', 'first_thought_steps'
-retriever=bm25
+retriever=$4    # bm25
+workers=$5      # 25
 
 out_dir='retrieval_logs'
 out_file="${out_dir}/${task}_${retriever}_q=${q_type}_k=${k_type}_$(date +'%Y%m%d-%H%M').json"
@@ -14,9 +15,24 @@ python run_retrieval.py \
     --corpus_dir "/fsx-comem/diwu0162/Search-o1/explorations/20250710_openthoughts/" \
     --corpus_file_pattern 'logs_hint_distillation_openthoughts_shard_*jsonl' \
     --out_file $out_file \
-    --retriever bm25 \
+    --retriever ${retriever} \
     --q_type $q_type \
     --k_type $k_type \
     --record_top_k 10 \
-    --report_metrics
+    --n_workers ${workers} \
+    --remove_oracle_from_top_k_record --report_metrics  #     --debug_run
 
+
+
+
+# 2025/7/15 - 4 settings to run 
+if [ $subset == "xxx" ]; then
+    export task=bamboogle
+    export n_workers=20
+    for s in 1; do
+        bash run_retrieval.sh $task question question bm25 $n_workers
+        bash run_retrieval.sh $task question_description question_description bm25 $n_workers
+        bash run_retrieval.sh $task question_description self bm25 $n_workers
+        bash run_retrieval.sh $task question first_thought_steps bm25 $n_workers
+    done
+fi
