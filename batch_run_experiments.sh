@@ -72,7 +72,7 @@ fi
 ##############################################################################
 
 hint_dir='/fsx-comem/diwu0162/Search-o1/explorations/20250714_retrieval_study/retrieval_logs/20250714_log_for_rag/'
-retrieval_exp="bm25_q=question_k=first_thought_steps"   # bm25_q=question_k=question bm25_q=question_description_k=question_description bm25_q=question_description_k=self  bm25_q=question_k=first_thought_steps
+retrieval_exp="bm25_q=oracle_hint_k=self"   # bm25_q=question_k=question bm25_q=question_description_k=question_description bm25_q=question_description_k=self  bm25_q=question_k=first_thought_steps  q=oracle_hint_k=self
 augmentation_strategy="top1-in-thinking"
 
 if [ $subset == "raghint1" ]; then
