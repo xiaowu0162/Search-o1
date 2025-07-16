@@ -46,27 +46,52 @@ fi
 
 
 ##############################################################################
-# Direct Generation with hints
+# Direct Generation with oracle hints
 ##############################################################################
 
 if [ $subset == "hint1" ]; then
-    # python scripts/run_direct_gen_with_oracle_hints.py --dataset_name amc --split test --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} --hint_file /fsx-comem/diwu0162/Search-o1/explorations/20250710_hint_eval_dataset/logs_hint_distillation_eval_task_amc.jsonl
-    # python scripts/run_direct_gen_with_oracle_hints.py --dataset_name aime --split test --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} --hint_file /fsx-comem/diwu0162/Search-o1/explorations/20250710_hint_eval_dataset/logs_hint_distillation_eval_task_aime.jsonl
-    # python scripts/run_direct_gen_with_oracle_hints.py --dataset_name math500 --split test --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} --hint_file /fsx-comem/diwu0162/Search-o1/explorations/20250710_hint_eval_dataset/logs_hint_distillation_eval_task_math500.jsonl
-    # python scripts/run_direct_gen_with_oracle_hints.py --dataset_name livecode --split test_1to4 --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} --hint_file /fsx-comem/diwu0162/Search-o1/explorations/20250710_hint_eval_dataset/logs_hint_distillation_eval_task_livecode.jsonl
+    python scripts/run_direct_gen_with_oracle_hints.py --dataset_name amc --split test --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} --hint_file /fsx-comem/diwu0162/Search-o1/explorations/20250710_hint_eval_dataset/logs_hint_distillation_eval_task_amc.jsonl
+    python scripts/run_direct_gen_with_oracle_hints.py --dataset_name aime --split test --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} --hint_file /fsx-comem/diwu0162/Search-o1/explorations/20250710_hint_eval_dataset/logs_hint_distillation_eval_task_aime.jsonl
+    python scripts/run_direct_gen_with_oracle_hints.py --dataset_name math500 --split test --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} --hint_file /fsx-comem/diwu0162/Search-o1/explorations/20250710_hint_eval_dataset/logs_hint_distillation_eval_task_math500.jsonl
+    python scripts/run_direct_gen_with_oracle_hints.py --dataset_name livecode --split test_1to4 --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} --hint_file /fsx-comem/diwu0162/Search-o1/explorations/20250710_hint_eval_dataset/logs_hint_distillation_eval_task_livecode.jsonl
     python scripts/run_direct_gen_with_oracle_hints.py --dataset_name gpqa --split diamond --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} --hint_file /fsx-comem/diwu0162/Search-o1/explorations/20250710_hint_eval_dataset/logs_hint_distillation_eval_task_gpqa.jsonl
-    # python scripts/run_direct_gen_with_oracle_hints.py --dataset_name bamboogle --split test --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} --hint_file /fsx-comem/diwu0162/Search-o1/explorations/20250710_hint_eval_dataset/logs_hint_distillation_eval_task_bamboogle.jsonl
+    python scripts/run_direct_gen_with_oracle_hints.py --dataset_name bamboogle --split test --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} --hint_file /fsx-comem/diwu0162/Search-o1/explorations/20250710_hint_eval_dataset/logs_hint_distillation_eval_task_bamboogle.jsonl
 
-
-    # Don't have hints for these task at this time. 
+    # Don't have hints for these tasks at this time. 
     # for ds in nq triviaqa; do
     #     python scripts/run_direct_gen_with_oracle_hints.py --dataset_name $ds --split test_first500 --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} --hint_file ???
     # done
     # for ds in musique hotpotqa 2wiki; do
     #     python scripts/run_direct_gen_with_oracle_hints.py --dataset_name $ds --split dev_first500 --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} --hint_file ???
     # done
+fi
+
+
+##############################################################################
+# Direct Generation with retrieved hints
+##############################################################################
+
+hint_dir='/fsx-comem/diwu0162/Search-o1/explorations/20250714_retrieval_study/retrieval_logs/20250714_log_for_rag/'
+retrieval_exp="bm25_q=question_k=first_thought_steps"   # bm25_q=question_k=question bm25_q=question_description_k=question_description bm25_q=question_description_k=self  bm25_q=question_k=first_thought_steps
+augmentation_strategy="top1-in-thinking"
+
+if [ $subset == "raghint1" ]; then
+    python scripts/run_direct_gen_with_retrieved_hints.py --dataset_name math500 --split test --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} --retrieved_hint_file "${hint_dir}/math500_${retrieval_exp}.json" --retrieval_exp_name ${retrieval_exp} --augmentation_strategy ${augmentation_strategy}
 fi 
 
+if [ $subset == "raghint2" ]; then
+    python scripts/run_direct_gen_with_retrieved_hints.py --dataset_name livecode --split test_1to4 --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} --retrieved_hint_file "${hint_dir}/livecode_${retrieval_exp}.json" --retrieval_exp_name ${retrieval_exp} --augmentation_strategy ${augmentation_strategy}
+fi 
+
+if [ $subset == "raghint3" ]; then
+    python scripts/run_direct_gen_with_retrieved_hints.py --dataset_name gpqa --split diamond --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} --retrieved_hint_file "${hint_dir}/gpqa_${retrieval_exp}.json" --retrieval_exp_name ${retrieval_exp} --augmentation_strategy ${augmentation_strategy}
+fi 
+
+if [ $subset == "raghint4" ]; then
+    python scripts/run_direct_gen_with_retrieved_hints.py --dataset_name aime --split test --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} --retrieved_hint_file "${hint_dir}/aime_${retrieval_exp}.json" --retrieval_exp_name ${retrieval_exp} --augmentation_strategy ${augmentation_strategy}
+    python scripts/run_direct_gen_with_retrieved_hints.py --dataset_name amc --split test --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} --retrieved_hint_file "${hint_dir}/amc_${retrieval_exp}.json" --retrieval_exp_name ${retrieval_exp} --augmentation_strategy ${augmentation_strategy}
+    python scripts/run_direct_gen_with_retrieved_hints.py --dataset_name bamboogle --split test --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} --retrieved_hint_file "${hint_dir}/bamboogle_${retrieval_exp}.json" --retrieval_exp_name ${retrieval_exp} --augmentation_strategy ${augmentation_strategy}
+fi 
 
 
 ##############################################################################

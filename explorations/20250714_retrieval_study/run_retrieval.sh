@@ -1,7 +1,7 @@
 #!/bin/bash                                                                                                                                                                                   
 
 task=$1
-q_type=$2       # 'question', 'question_description', 'first_thought_steps'
+q_type=$2       # 'question', 'question_description', 'first_thought_steps', 'oracle_hint'
 k_type=$3       # 'self', 'question', 'question_description', 'first_thought_steps'
 retriever=$4    # bm25
 workers=$5      # 25
@@ -23,16 +23,14 @@ python run_retrieval.py \
     --remove_oracle_from_top_k_record --report_metrics  #     --debug_run
 
 
-
-
 # 2025/7/15 - 4 settings to run 
-if [ $subset == "xxx" ]; then
-    export task=bamboogle
-    export n_workers=20
-    for s in 1; do
-        bash run_retrieval.sh $task question question bm25 $n_workers
-        bash run_retrieval.sh $task question_description question_description bm25 $n_workers
-        bash run_retrieval.sh $task question_description self bm25 $n_workers
-        bash run_retrieval.sh $task question first_thought_steps bm25 $n_workers
-    done
-fi
+# if [ $subset == "xxx" ]; then
+#     export task=bamboogle
+#     export n_workers=20
+#     for s in 1; do
+#         bash run_retrieval.sh $task question question bm25 $n_workers
+#         bash run_retrieval.sh $task question_description question_description bm25 $n_workers
+#         bash run_retrieval.sh $task question_description self bm25 $n_workers
+#         bash run_retrieval.sh $task question first_thought_steps bm25 $n_workers
+#     done
+# fi

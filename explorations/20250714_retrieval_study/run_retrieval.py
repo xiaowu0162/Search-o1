@@ -25,7 +25,7 @@ def parse_args():
     
     # retrieval parameters
     parser.add_argument('--retriever', type=str, required=True, choices=['bm25'])
-    parser.add_argument('--q_type', type=str, required=True, choices=['question', 'question_description', 'first_thought_steps'])
+    parser.add_argument('--q_type', type=str, required=True, choices=['question', 'question_description', 'first_thought_steps', 'oracle_hint'])
     parser.add_argument('--k_type', type=str, required=True, choices=['self', 'question', 'question_description', 'first_thought_steps'])
     # parser.add_argument('--v_type', type=str, required=True, choices=['hint'])   # no need to experiment for now
     parser.add_argument('--record_top_k', type=int, default=10)
@@ -68,7 +68,7 @@ def batch_run_retrieval(query_data_chunk, args, tokenized_corpus, corpus_values,
 
         # save 
         if args.remove_oracle_from_top_k_record:
-            top_items_to_save = [corpus_values[idx] for idx in sorted_indices[:args.record_top_k+10] if corpus_labels[idx] == 0][:args.record_top_k]
+            top_items_to_save = [corpus_values[idx] for idx in sorted_indices[:args.record_top_k+10] if all_labels[idx] == 0][:args.record_top_k]
         else:
             top_items_to_save = [corpus_values[idx] for idx in sorted_indices[:args.record_top_k]]
         out_data_structure['retrieval_result'] = {
@@ -153,6 +153,8 @@ def main():
             cur_query = query_entry['hint']['content']['applicable_problems'] if query_entry['hint']['content']['applicable_problems'] else query_entry['question']
         elif args.q_type == 'first_thought_steps':
             cur_query = ' '.join(query_entry['teacher_thoughts'].split()[:100])  # just a simple heuristic
+        elif args.q_type == 'oracle_hint':
+            cur_query = query_entry['hint']['content']['hint']
         else:
             raise NotImplementedError 
         
