@@ -74,7 +74,7 @@ fi
 hint_dir='/fsx-comem/diwu0162/Search-o1/explorations/20250714_retrieval_study/retrieval_logs/20250714_log_for_rag/'
 retrieval_exp="bm25_q=question_k=first_thought_steps"   # bm25_q=question_k=question bm25_q=question_description_k=question_description bm25_q=question_description_k=self  bm25_q=question_k=first_thought_steps  bm25_q=oracle_hint_k=self
 augmentation_strategy="direct-in-thought"    # "summ-then-in-thought"
-keep_hint_topk=5
+keep_hint_topk=3
 
 if [ $subset == "raghint1" ]; then
     python scripts/run_direct_gen_with_retrieved_hints.py --dataset_name math500 --split test --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} --retrieved_hint_file "${hint_dir}/math500_${retrieval_exp}.json" --retrieval_exp_name ${retrieval_exp} --augmentation_strategy ${augmentation_strategy} --keep_hint_topk ${keep_hint_topk}
@@ -96,7 +96,7 @@ fi
 
 
 if [ $subset == "raghintall" ]; then
-    # python scripts/run_direct_gen_with_retrieved_hints.py --dataset_name math500 --split test --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} --retrieved_hint_file "${hint_dir}/math500_${retrieval_exp}.json" --retrieval_exp_name ${retrieval_exp} --augmentation_strategy ${augmentation_strategy} --keep_hint_topk ${keep_hint_topk}
+    python scripts/run_direct_gen_with_retrieved_hints.py --dataset_name math500 --split test --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} --retrieved_hint_file "${hint_dir}/math500_${retrieval_exp}.json" --retrieval_exp_name ${retrieval_exp} --augmentation_strategy ${augmentation_strategy} --keep_hint_topk ${keep_hint_topk}
     python scripts/run_direct_gen_with_retrieved_hints.py --dataset_name livecode --split test_1to4 --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} --retrieved_hint_file "${hint_dir}/livecode_${retrieval_exp}.json" --retrieval_exp_name ${retrieval_exp} --augmentation_strategy ${augmentation_strategy} --keep_hint_topk ${keep_hint_topk}
     python scripts/run_direct_gen_with_retrieved_hints.py --dataset_name gpqa --split diamond --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} --retrieved_hint_file "${hint_dir}/gpqa_${retrieval_exp}.json" --retrieval_exp_name ${retrieval_exp} --augmentation_strategy ${augmentation_strategy} --keep_hint_topk ${keep_hint_topk}
     python scripts/run_direct_gen_with_retrieved_hints.py --dataset_name aime --split test --model_path ${model_name} --use_openai_inference --openai_server_base ${server_base} --retrieved_hint_file "${hint_dir}/aime_${retrieval_exp}.json" --retrieval_exp_name ${retrieval_exp} --augmentation_strategy ${augmentation_strategy} --keep_hint_topk ${keep_hint_topk}

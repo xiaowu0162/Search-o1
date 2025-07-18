@@ -2,6 +2,7 @@
 *json
 *jsonl
 data/
+embeddings/
 cache/
 outputs/
 *.pyc
